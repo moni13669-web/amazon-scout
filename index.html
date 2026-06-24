@@ -1,269 +1,217 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Amazon Price Scout</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --bg:        #0d0f14;
-      --surface:   #151820;
-      --surface2:  #1c1f2b;
-      --surface3:  #232737;
-      --border:    #2a2e40;
-      --border2:   #353a52;
-      --accent:    #f5a623;
-      --accent2:   #e8951a;
-      --green:     #22c55e;
-      --red:       #ef4444;
-      --yellow:    #eab308;
-      --text:      #f0f2f8;
-      --text2:     #9ca3c4;
-      --text3:     #5c6285;
-      --mono:      'JetBrains Mono', monospace;
-      --sans:      'Inter', sans-serif;
-      --radius:    12px;
-      --radius-sm: 7px;
+      --bg:       #0d0f14;
+      --surface:  #151820;
+      --surface2: #1c1f2b;
+      --surface3: #232737;
+      --border:   #2a2e40;
+      --border2:  #353a52;
+      --accent:   #f5a623;
+      --accent2:  #e8951a;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --yellow:   #eab308;
+      --text:     #f0f2f8;
+      --text2:    #9ca3c4;
+      --text3:    #5c6285;
+      --mono:     'JetBrains Mono', monospace;
+      --sans:     'Inter', sans-serif;
+      --r:        12px;
+      --rs:       7px;
     }
-
     body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--sans);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); min-height: 100vh;
+      display: flex; flex-direction: column;
     }
 
+    /* Header */
     header {
-      padding: 1.25rem 2rem;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      padding: 1rem 2rem; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
       background: var(--surface);
     }
-    .logo-icon {
-      width: 36px; height: 36px;
-      background: var(--accent);
-      border-radius: 8px;
-      display: grid; place-items: center;
-      font-size: 18px;
-    }
-    .logo-text { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+    .logo { width: 34px; height: 34px; background: var(--accent); border-radius: 8px; display: grid; place-items: center; font-size: 16px; }
+    .logo-text { font-size: 16px; font-weight: 700; }
     .logo-sub  { font-size: 11px; color: var(--text3); margin-top: 1px; }
-    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-    .domain-select {
+    .header-right { margin-left: auto; }
+    .domain-sel {
       background: var(--surface2); border: 1px solid var(--border);
       color: var(--text2); font-family: var(--mono); font-size: 12px;
-      padding: 6px 10px; border-radius: var(--radius-sm); cursor: pointer; outline: none;
+      padding: 6px 10px; border-radius: var(--rs); outline: none; cursor: pointer;
     }
-    .domain-select:focus { border-color: var(--accent); }
+    .domain-sel:focus { border-color: var(--accent); }
 
-    main {
-      flex: 1;
-      max-width: 860px;
-      margin: 0 auto;
-      width: 100%;
-      padding: 3rem 1.5rem 4rem;
-    }
+    /* Main */
+    main { flex: 1; max-width: 680px; margin: 0 auto; width: 100%; padding: 3rem 1.5rem 4rem; }
 
     .hero { text-align: center; margin-bottom: 2.5rem; }
-    .hero h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; letter-spacing: -0.5px; line-height: 1.2; }
+    .hero h1 { font-size: clamp(24px, 4vw, 36px); font-weight: 700; letter-spacing: -0.4px; }
     .hero h1 span { color: var(--accent); }
-    .hero p { color: var(--text2); font-size: 15px; margin-top: 10px; }
+    .hero p { color: var(--text2); font-size: 14px; margin-top: 8px; }
 
-    .search-wrap {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.25rem;
-      margin-bottom: 1.5rem;
+    /* Search */
+    .search-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 1.1rem; margin-bottom: 1.25rem;
     }
-    .search-row { display: flex; gap: 10px; }
+    .search-row { display: flex; gap: 8px; }
     .search-input {
-      flex: 1;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 15px;
-      padding: 12px 16px;
-      letter-spacing: 0.05em;
-      outline: none;
+      flex: 1; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--rs); color: var(--text);
+      font-family: var(--mono); font-size: 15px;
+      padding: 11px 14px; letter-spacing: 0.06em; outline: none;
       transition: border-color 0.15s;
     }
     .search-input::placeholder { color: var(--text3); }
     .search-input:focus { border-color: var(--accent); }
-    .search-btn {
-      background: var(--accent); border: none;
-      border-radius: var(--radius-sm);
-      color: #0d0f14; font-family: var(--sans);
-      font-size: 14px; font-weight: 700;
-      padding: 12px 24px; cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
-      white-space: nowrap; display: flex; align-items: center; gap: 7px;
+    .fetch-btn {
+      background: var(--accent); border: none; border-radius: var(--rs);
+      color: #0d0f14; font-family: var(--sans); font-size: 14px; font-weight: 700;
+      padding: 11px 22px; cursor: pointer; white-space: nowrap;
+      transition: background 0.12s, transform 0.1s;
+      display: flex; align-items: center; gap: 6px;
     }
-    .search-btn:hover  { background: var(--accent2); }
-    .search-btn:active { transform: scale(0.97); }
-    .search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .fetch-btn:hover  { background: var(--accent2); }
+    .fetch-btn:active { transform: scale(0.97); }
+    .fetch-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    .examples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
-    .ex-label { font-size: 12px; color: var(--text3); }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+    .chip-label { font-size: 11px; color: var(--text3); }
     .chip {
       font-family: var(--mono); font-size: 11px;
-      padding: 4px 10px; border: 1px solid var(--border2);
-      border-radius: 999px; cursor: pointer;
-      color: var(--text2); background: var(--surface2);
-      transition: border-color 0.12s, color 0.12s;
+      padding: 3px 9px; border: 1px solid var(--border2);
+      border-radius: 999px; cursor: pointer; color: var(--text2);
+      background: var(--surface2); transition: border-color 0.1s, color 0.1s;
     }
     .chip:hover { border-color: var(--accent); color: var(--accent); }
 
-    .loader { display: none; flex-direction: column; align-items: center; gap: 16px; padding: 3rem 0; text-align: center; }
+    /* Loader */
+    .loader { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 2.5rem 0; }
     .loader.show { display: flex; }
-    .loader-ring {
-      width: 44px; height: 44px;
-      border: 3px solid var(--border2);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.75s linear infinite;
+    .ring {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border2); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .loader p { color: var(--text2); font-size: 14px; }
-    .loader-steps { color: var(--text3); font-size: 12px; font-family: var(--mono); }
+    .loader-msg { color: var(--text2); font-size: 13px; }
+    .loader-attempt { color: var(--text3); font-size: 11px; font-family: var(--mono); }
 
+    /* Error */
     .error-box {
-      display: none;
-      background: #1e1212; border: 1px solid #5a1d1d;
-      border-radius: var(--radius); padding: 1rem 1.25rem;
-      color: var(--red); font-size: 14px;
-      gap: 10px; align-items: flex-start; margin-bottom: 1rem;
+      display: none; background: #1e1212; border: 1px solid #5a1d1d;
+      border-radius: var(--r); padding: 0.9rem 1.1rem;
+      color: var(--red); font-size: 13px; gap: 8px;
+      align-items: center; margin-bottom: 1rem;
     }
     .error-box.show { display: flex; }
 
+    /* Result card */
     .result { display: none; }
     .result.show { display: block; }
 
-    .product-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 1.5rem;
     }
 
-    .card-top { display: grid; grid-template-columns: 180px 1fr; gap: 0; }
-
-    .img-panel {
-      background: #fff; display: flex;
-      align-items: center; justify-content: center;
-      padding: 1.25rem; min-height: 180px;
+    /* Availability badge */
+    .badge {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.07em; text-transform: uppercase;
+      padding: 3px 10px; border-radius: 4px; margin-bottom: 12px;
     }
-    .img-panel img { max-width: 100%; max-height: 160px; object-fit: contain; }
-    .img-placeholder {
-      width: 80px; height: 80px; background: var(--surface3);
-      border-radius: 10px; display: grid; place-items: center; font-size: 30px;
-    }
+    .badge-in  { background: #0f2e1a; color: var(--green);  border: 1px solid #1a4d2a; }
+    .badge-out { background: #2e0f0f; color: var(--red);    border: 1px solid #4d1a1a; }
+    .badge-low { background: #2e2310; color: var(--yellow); border: 1px solid #4d3a18; }
+    .badge-unk { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
 
-    .info-panel { padding: 1.5rem; border-left: 1px solid var(--border); }
-
-    .product-badge {
-      display: inline-block; font-size: 10px; font-weight: 600;
-      letter-spacing: 0.08em; text-transform: uppercase;
-      padding: 3px 9px; border-radius: 4px; margin-bottom: 10px;
-    }
-    .badge-in   { background: #0f2e1a; color: var(--green);  border: 1px solid #1a4d2a; }
-    .badge-out  { background: #2e0f0f; color: var(--red);    border: 1px solid #4d1a1a; }
-    .badge-low  { background: #2e2310; color: var(--yellow); border: 1px solid #4d3a18; }
-    .badge-unk  { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
-
-    .product-title { font-size: 16px; font-weight: 600; line-height: 1.45; color: var(--text); margin-bottom: 1rem; }
-
-    .price-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 1.25rem; flex-wrap: wrap; }
-    .price-current { font-size: 32px; font-weight: 700; color: var(--accent); font-family: var(--mono); }
-    .price-mrp { font-size: 15px; color: var(--text3); text-decoration: line-through; font-family: var(--mono); }
-    .price-discount {
-      font-size: 12px; font-weight: 700;
-      background: #1e2e0f; color: var(--green);
-      border: 1px solid #2e4d18; padding: 3px 9px; border-radius: 4px;
+    .product-title {
+      font-size: 16px; font-weight: 600; line-height: 1.45;
+      color: var(--text); margin-bottom: 1.25rem;
     }
 
-    .meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1rem; }
-    .meta-item {
+    /* 3 stat boxes */
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1.25rem; }
+    .stat {
       background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 0.6rem 0.8rem;
+      border-radius: var(--rs); padding: 0.85rem 1rem;
     }
-    .meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); margin-bottom: 3px; }
-    .meta-value { font-size: 13px; font-weight: 500; color: var(--text); }
-    .stars { color: var(--yellow); letter-spacing: -1px; }
+    .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text3); margin-bottom: 5px; }
+    .stat-value { font-size: 22px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+    .stat-value.price-val { color: var(--accent); }
+    .stat-value.rating-val { color: var(--yellow); font-size: 18px; }
+    .stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
 
+    /* Footer row */
     .card-footer {
-      border-top: 1px solid var(--border); padding: 0.9rem 1.5rem;
+      border-top: 1px solid var(--border); padding-top: 0.9rem;
       display: flex; align-items: center; justify-content: space-between;
-      gap: 12px; background: var(--surface2); flex-wrap: wrap;
+      gap: 10px; flex-wrap: wrap;
     }
-    .asin-label { font-family: var(--mono); font-size: 12px; color: var(--text3); }
-    .asin-label span { color: var(--text2); }
-    .footer-actions { display: flex; gap: 10px; }
-    .btn-secondary {
+    .asin-mono { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+    .asin-mono span { color: var(--text2); }
+    .footer-btns { display: flex; gap: 8px; }
+    .btn-sec {
       background: var(--surface3); border: 1px solid var(--border2);
-      color: var(--text2); font-size: 12px; font-weight: 500;
-      padding: 7px 14px; border-radius: var(--radius-sm); cursor: pointer;
-      transition: background 0.12s, color 0.12s;
-      display: flex; align-items: center; gap: 6px;
+      color: var(--text2); font-size: 11px; font-weight: 500;
+      padding: 6px 12px; border-radius: var(--rs); cursor: pointer;
+      transition: background 0.1s; display: flex; align-items: center; gap: 5px;
     }
-    .btn-secondary:hover { background: var(--border2); color: var(--text); }
-    .btn-amazon {
+    .btn-sec:hover { background: var(--border2); color: var(--text); }
+    .btn-amz {
       background: var(--accent); border: none; color: #0d0f14;
-      font-size: 12px; font-weight: 700; padding: 7px 16px;
-      border-radius: var(--radius-sm); cursor: pointer;
-      transition: background 0.12s; display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 700; padding: 6px 14px;
+      border-radius: var(--rs); cursor: pointer; transition: background 0.1s;
     }
-    .btn-amazon:hover { background: var(--accent2); }
+    .btn-amz:hover { background: var(--accent2); }
 
-    .history-section { margin-top: 1.25rem; }
-    .section-title {
-      font-size: 13px; font-weight: 600; color: var(--text2);
-      text-transform: uppercase; letter-spacing: 0.06em;
-      margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+    /* History */
+    .history { margin-top: 1.25rem; }
+    .history-title {
+      font-size: 11px; font-weight: 600; color: var(--text3);
+      text-transform: uppercase; letter-spacing: 0.07em;
+      margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
     }
-    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-    .history-note {
-      font-size: 12px; color: var(--text3);
+    .history-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .history-box {
       background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 0.75rem 1rem; line-height: 1.6;
+      border-radius: var(--rs); padding: 0.75rem 1rem;
+      font-size: 12px; color: var(--text3); line-height: 1.8;
+      font-family: var(--mono);
     }
-    .history-note b { color: var(--text2); }
+    .history-box b { color: var(--text2); font-family: var(--sans); font-size: 11px; }
 
     footer {
-      padding: 1.25rem 2rem; border-top: 1px solid var(--border);
-      text-align: center; font-size: 12px; color: var(--text3);
+      padding: 1rem 2rem; border-top: 1px solid var(--border);
+      text-align: center; font-size: 11px; color: var(--text3);
     }
 
-    @media (max-width: 600px) {
-      .card-top { grid-template-columns: 1fr; }
-      .img-panel { min-height: 140px; border-left: none; border-bottom: 1px solid var(--border); }
-      .info-panel { border-left: none; padding: 1rem; }
-      .meta-grid { grid-template-columns: repeat(2, 1fr); }
-      .price-current { font-size: 26px; }
-      main { padding: 2rem 1rem; }
-      header { padding: 1rem; }
+    @media (max-width: 500px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      .stat-value { font-size: 18px; }
     }
   </style>
 </head>
 <body>
 
 <header>
-  <div class="logo-icon">🔍</div>
+  <div class="logo">🔍</div>
   <div>
     <div class="logo-text">Price Scout</div>
     <div class="logo-sub">Amazon Product Lookup</div>
   </div>
   <div class="header-right">
-    <select class="domain-select" id="domainSelect">
+    <select class="domain-sel" id="domain">
       <option value="amazon.in">🇮🇳 amazon.in</option>
       <option value="amazon.com">🇺🇸 amazon.com</option>
       <option value="amazon.co.uk">🇬🇧 amazon.co.uk</option>
@@ -275,277 +223,264 @@
 <main>
   <div class="hero">
     <h1>Amazon <span>Price Scout</span></h1>
-    <p>Enter any ASIN to fetch live product title, price, rating & availability</p>
+    <p>Enter an ASIN to get live title, price & rating</p>
   </div>
 
-  <div class="search-wrap">
+  <div class="search-box">
     <div class="search-row">
-      <input class="search-input" id="asinInput" type="text"
-        placeholder="B0FY66N9RX" maxlength="10"
-        autocomplete="off" spellcheck="false" />
-      <button class="search-btn" id="searchBtn" onclick="lookupProduct()">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+      <input class="search-input" id="asin" type="text"
+        placeholder="e.g. B0FY66N9RX" maxlength="10"
+        autocomplete="off" spellcheck="false"/>
+      <button class="fetch-btn" id="fetchBtn" onclick="run()">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
         Fetch
       </button>
     </div>
-    <div class="examples">
-      <span class="ex-label">Try:</span>
-      <span class="chip" onclick="fillAndSearch('B0FY66N9RX')">B0FY66N9RX</span>
-      <span class="chip" onclick="fillAndSearch('B09G9FPHY6')">B09G9FPHY6</span>
-      <span class="chip" onclick="fillAndSearch('B0BDJH3K77')">B0BDJH3K77</span>
-      <span class="chip" onclick="fillAndSearch('B08N5WRWNW')">B08N5WRWNW</span>
+    <div class="chips">
+      <span class="chip-label">Try:</span>
+      <span class="chip" onclick="go('B0FY66N9RX')">B0FY66N9RX</span>
+      <span class="chip" onclick="go('B0DGXWJLX4')">B0DGXWJLX4</span>
+      <span class="chip" onclick="go('B09G9FPHY6')">B09G9FPHY6</span>
+      <span class="chip" onclick="go('B08N5WRWNW')">B08N5WRWNW</span>
     </div>
   </div>
 
-  <div class="error-box" id="errorBox">
-    <span>⚠️</span>
-    <span id="errorMsg">Something went wrong.</span>
+  <div class="error-box" id="errBox">
+    <span>⚠️</span><span id="errMsg"></span>
   </div>
 
   <div class="loader" id="loader">
-    <div class="loader-ring"></div>
-    <p>Fetching product data…</p>
-    <div class="loader-steps" id="loaderStep">Connecting to Amazon</div>
+    <div class="ring"></div>
+    <div class="loader-msg">Fetching from Amazon…</div>
+    <div class="loader-attempt" id="attemptMsg">Attempt 1</div>
   </div>
 
   <div class="result" id="result">
-    <div class="product-card">
-      <div class="card-top">
-        <div class="img-panel" id="imgPanel">
-          <div class="img-placeholder">📦</div>
+    <div class="card">
+      <div id="badge" class="badge badge-unk">Unknown</div>
+      <div class="product-title" id="title">—</div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Current Price</div>
+          <div class="stat-value price-val" id="price">—</div>
+          <div class="stat-sub" id="currency">INR</div>
         </div>
-        <div class="info-panel">
-          <div id="availBadge" class="product-badge badge-unk">Unknown</div>
-          <div class="product-title" id="productTitle">—</div>
-          <div class="price-row">
-            <div class="price-current" id="priceDisplay">—</div>
-            <div class="price-mrp" id="mrpDisplay" style="display:none"></div>
-            <div class="price-discount" id="discountDisplay" style="display:none"></div>
-          </div>
-          <div class="meta-grid">
-            <div class="meta-item">
-              <div class="meta-label">Brand</div>
-              <div class="meta-value" id="brandDisplay">—</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Rating</div>
-              <div class="meta-value" id="ratingDisplay">—</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Reviews</div>
-              <div class="meta-value" id="reviewsDisplay">—</div>
-            </div>
-            <div class="meta-item" style="grid-column: span 2;">
-              <div class="meta-label">Category</div>
-              <div class="meta-value" id="categoryDisplay">—</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Seller</div>
-              <div class="meta-value" id="sellerDisplay">—</div>
-            </div>
-          </div>
+        <div class="stat">
+          <div class="stat-label">Rating</div>
+          <div class="stat-value rating-val" id="rating">—</div>
+          <div class="stat-sub">out of 5</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Last Fetched</div>
+          <div class="stat-value" style="font-size:13px;color:var(--text2);" id="fetchedAt">—</div>
+          <div class="stat-sub" id="fetchedDate">—</div>
         </div>
       </div>
+
       <div class="card-footer">
-        <div class="asin-label">ASIN: <span id="asinDisplay">—</span></div>
-        <div class="footer-actions">
-          <button class="btn-secondary" onclick="copyAsin()">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <rect x="9" y="9" width="13" height="13" rx="2"/>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-            </svg>
-            Copy ASIN
-          </button>
-          <button class="btn-secondary" onclick="lookupProduct()">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
-            Refresh
-          </button>
-          <button class="btn-amazon" onclick="openAmazon()">View on Amazon ↗</button>
+        <div class="asin-mono">ASIN: <span id="asinDisplay">—</span></div>
+        <div class="footer-btns">
+          <button class="btn-sec" onclick="copyAsin()">Copy ASIN</button>
+          <button class="btn-sec" onclick="run()">↻ Refresh</button>
+          <button class="btn-amz" onclick="openAmz()">View on Amazon ↗</button>
         </div>
       </div>
     </div>
 
-    <div class="history-section">
-      <div class="section-title">Price History</div>
-      <div class="history-note">
-        <b>Price history is recorded each time you look up an ASIN.</b><br/>
-        Every fetch is saved in your browser. Come back over different days to build up a price trend.<br/><br/>
-        <span id="historyLog">No history yet for this ASIN.</span>
-      </div>
+    <div class="history">
+      <div class="history-title">Price History</div>
+      <div class="history-box" id="historyBox">No history yet for this ASIN.</div>
     </div>
   </div>
 </main>
 
 <footer>
-  Price Scout — live data scraped from Amazon &nbsp;·&nbsp; Deployed on Vercel &nbsp;·&nbsp; For informational use only
+  Price Scout — fetches title, price & rating only · Deployed on Vercel
 </footer>
 
 <script>
-  // ── API endpoint — auto-detects local vs Vercel ──────────────
-  const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:5000'
-    : '';  // On Vercel, same origin — routes handled by vercel.json
-
+  const API = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
   let currentAsin = '';
   let currentUrl  = '';
+  let attemptCount = 0;
+  let retryTimer = null;
 
+  // ── History ──────────────────────────────────────────────────
   function saveHistory(asin, price) {
     if (!price) return;
-    const key = `ps_history_${asin}`;
-    const existing = JSON.parse(localStorage.getItem(key) || '[]');
-    existing.push({ price, ts: Date.now() });
-    if (existing.length > 30) existing.splice(0, existing.length - 30);
-    localStorage.setItem(key, JSON.stringify(existing));
+    const key = `ps_${asin}`;
+    const arr = JSON.parse(localStorage.getItem(key) || '[]');
+    arr.push({ price, ts: Date.now() });
+    if (arr.length > 50) arr.splice(0, arr.length - 50);
+    localStorage.setItem(key, JSON.stringify(arr));
   }
 
-  function renderHistory(asin) {
-    const key = `ps_history_${asin}`;
-    const history = JSON.parse(localStorage.getItem(key) || '[]');
-    const el = document.getElementById('historyLog');
-    if (!history.length) { el.textContent = 'No history yet for this ASIN.'; return; }
-    const lines = history.map(h => {
+  function showHistory(asin) {
+    const key = `ps_${asin}`;
+    const arr = JSON.parse(localStorage.getItem(key) || '[]');
+    const box = document.getElementById('historyBox');
+    if (!arr.length) { box.textContent = 'No history yet for this ASIN.'; return; }
+    const lines = arr.slice(-15).reverse().map(h => {
       const d = new Date(h.ts);
-      return `${d.toLocaleDateString('en-IN')} ${d.toLocaleTimeString('en-IN')} → ₹${Number(h.price).toLocaleString('en-IN')}`;
+      const ds = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+      const ts = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+      return `${ds} ${ts}  →  ₹${Number(h.price).toLocaleString('en-IN')}`;
     });
-    el.innerHTML = '<b>Recorded prices:</b><br>' + lines.join('<br>');
+    box.innerHTML = `<b>Recent prices (newest first):</b>\n` + lines.join('\n');
   }
 
-  function showLoader(msg = 'Connecting to Amazon') {
-    document.getElementById('loader').classList.add('show');
-    document.getElementById('loaderStep').textContent = msg;
+  // ── UI helpers ───────────────────────────────────────────────
+  function showErr(msg) {
+    document.getElementById('errMsg').textContent = msg;
+    document.getElementById('errBox').classList.add('show');
+    document.getElementById('loader').classList.remove('show');
     document.getElementById('result').classList.remove('show');
-    document.getElementById('errorBox').classList.remove('show');
+    document.getElementById('fetchBtn').disabled = false;
   }
 
-  function hideLoader() { document.getElementById('loader').classList.remove('show'); }
-
-  function showError(msg) {
-    hideLoader();
-    document.getElementById('errorMsg').textContent = msg;
-    document.getElementById('errorBox').classList.add('show');
+  function showLoader() {
+    document.getElementById('loader').classList.add('show');
+    document.getElementById('errBox').classList.remove('show');
     document.getElementById('result').classList.remove('show');
   }
 
   function showResult() {
     document.getElementById('result').classList.add('show');
-    hideLoader();
-    document.getElementById('errorBox').classList.remove('show');
+    document.getElementById('loader').classList.remove('show');
+    document.getElementById('errBox').classList.remove('show');
+    document.getElementById('fetchBtn').disabled = false;
   }
 
-  function availBadge(status) {
-    const el = document.getElementById('availBadge');
+  function setBadge(status) {
+    const el = document.getElementById('badge');
     const map = {
       'In Stock':     ['badge-in',  'In Stock'],
       'Out of Stock': ['badge-out', 'Out of Stock'],
       'Low Stock':    ['badge-low', 'Low Stock'],
     };
     const [cls, label] = map[status] || ['badge-unk', status || 'Unknown'];
-    el.className = `product-badge ${cls}`;
+    el.className = `badge ${cls}`;
     el.textContent = label;
-  }
-
-  function starsHtml(rating) {
-    if (!rating) return '—';
-    const full = Math.round(rating);
-    return `<span class="stars">${'★'.repeat(full)}${'☆'.repeat(5 - full)}</span> <span style="color:var(--text2);font-size:12px;">${rating}</span>`;
   }
 
   function renderProduct(d) {
     currentUrl = d.url;
 
-    const imgPanel = document.getElementById('imgPanel');
-    imgPanel.innerHTML = d.image_url
-      ? `<img src="${d.image_url}" alt="Product" />`
-      : `<div class="img-placeholder">📦</div>`;
+    setBadge(d.availability);
+    document.getElementById('title').textContent =
+      d.title || 'Title could not be fetched';
 
-    availBadge(d.availability);
-    document.getElementById('productTitle').textContent = d.title || 'Title unavailable';
+    // Price
+    document.getElementById('price').textContent =
+      d.price ? `₹${Number(d.price).toLocaleString('en-IN')}` : 'N/A';
+    document.getElementById('currency').textContent =
+      d.price ? d.currency || 'INR' : '—';
 
-    document.getElementById('priceDisplay').textContent = d.price
-      ? `₹${Number(d.price).toLocaleString('en-IN')}` : 'Price N/A';
+    // Rating
+    if (d.rating) {
+      const stars = '★'.repeat(Math.round(d.rating)) + '☆'.repeat(5 - Math.round(d.rating));
+      document.getElementById('rating').textContent = `${stars} ${d.rating}`;
+    } else {
+      document.getElementById('rating').textContent = 'N/A';
+    }
 
-    const mrpEl = document.getElementById('mrpDisplay');
-    if (d.mrp && d.mrp > d.price) {
-      mrpEl.textContent = `₹${Number(d.mrp).toLocaleString('en-IN')}`;
-      mrpEl.style.display = '';
-    } else { mrpEl.style.display = 'none'; }
+    // Fetched time
+    const now = new Date();
+    document.getElementById('fetchedAt').textContent =
+      now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('fetchedDate').textContent =
+      now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
-    const discEl = document.getElementById('discountDisplay');
-    if (d.discount_percent) {
-      discEl.textContent = `${d.discount_percent}% off`;
-      discEl.style.display = '';
-    } else { discEl.style.display = 'none'; }
+    document.getElementById('asinDisplay').textContent = d.asin || currentAsin;
 
-    document.getElementById('brandDisplay').textContent    = d.brand    || '—';
-    document.getElementById('ratingDisplay').innerHTML     = starsHtml(d.rating);
-    document.getElementById('reviewsDisplay').textContent  = d.reviews  || '—';
-    document.getElementById('categoryDisplay').textContent = d.category || '—';
-    document.getElementById('sellerDisplay').textContent   = d.seller   || '—';
-    document.getElementById('asinDisplay').textContent     = d.asin     || currentAsin;
-
-    saveHistory(d.asin, d.price);
-    renderHistory(d.asin);
+    saveHistory(d.asin || currentAsin, d.price);
+    showHistory(d.asin || currentAsin);
     showResult();
   }
 
-  async function lookupProduct() {
-    const raw    = document.getElementById('asinInput').value.trim().toUpperCase();
-    const domain = document.getElementById('domainSelect').value;
+  // ── Fetch with client-side retry ─────────────────────────────
+  async function fetchOnce(asin, domain) {
+    const res = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    if (!text || text.trim() === '') throw new Error('Empty response');
+    return JSON.parse(text);
+  }
+
+  async function run() {
+    // Cancel any pending retry
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+
+    const raw    = document.getElementById('asin').value.trim().toUpperCase();
+    const domain = document.getElementById('domain').value;
     const match  = raw.match(/[A-Z0-9]{10}/);
 
-    if (!match) { showError('Please enter a valid 10-character ASIN (e.g. B0FY66N9RX)'); return; }
+    if (!match) { showErr('Please enter a valid 10-character ASIN (e.g. B0FY66N9RX)'); return; }
 
     currentAsin = match[0];
-    document.getElementById('asinInput').value = currentAsin;
-    document.getElementById('searchBtn').disabled = true;
-    showLoader('Connecting to Amazon…');
+    document.getElementById('asin').value = currentAsin;
+    document.getElementById('fetchBtn').disabled = true;
+    attemptCount = 0;
+    showLoader();
+    attempt(currentAsin, domain);
+  }
 
-    const steps = ['Fetching product page…', 'Parsing HTML…', 'Extracting price & details…'];
-    let si = 0;
-    const stepTimer = setInterval(() => {
-      if (si < steps.length) document.getElementById('loaderStep').textContent = steps[si++];
-    }, 900);
+  async function attempt(asin, domain) {
+    attemptCount++;
+    document.getElementById('attemptMsg').textContent =
+      attemptCount === 1 ? 'Connecting to Amazon…' : `Retry attempt ${attemptCount}…`;
 
     try {
-      const res = await fetch(`${API}/api/product?asin=${currentAsin}&domain=${domain}`);
-      clearInterval(stepTimer);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Server error ${res.status}`);
+      const data = await fetchOnce(asin, domain);
+
+      if (data.error) {
+        // If blocked, auto-retry up to 5 times with short delay
+        if (attemptCount < 5) {
+          const delay = 800 * attemptCount;
+          document.getElementById('attemptMsg').textContent =
+            `Blocked — retrying in ${(delay/1000).toFixed(1)}s… (${attemptCount}/5)`;
+          retryTimer = setTimeout(() => attempt(asin, domain), delay);
+          return;
+        }
+        showErr(data.error);
+        return;
       }
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+
       renderProduct(data);
+
     } catch (err) {
-      clearInterval(stepTimer);
-      showError(err.message || 'Something went wrong. Try again.');
-    } finally {
-      document.getElementById('searchBtn').disabled = false;
+      if (attemptCount < 5) {
+        const delay = 800 * attemptCount;
+        document.getElementById('attemptMsg').textContent =
+          `Error — retrying in ${(delay/1000).toFixed(1)}s… (${attemptCount}/5)`;
+        retryTimer = setTimeout(() => attempt(asin, domain), delay);
+        return;
+      }
+      showErr('Failed after 5 attempts. Try again in a moment.');
     }
   }
 
-  function fillAndSearch(asin) {
-    document.getElementById('asinInput').value = asin;
-    lookupProduct();
+  function go(asin) {
+    document.getElementById('asin').value = asin;
+    run();
   }
 
-  function openAmazon() { if (currentUrl) window.open(currentUrl, '_blank'); }
+  function openAmz() { if (currentUrl) window.open(currentUrl, '_blank'); }
 
   function copyAsin() {
     navigator.clipboard.writeText(currentAsin).then(() => {
-      const btn = event.currentTarget;
-      const orig = btn.innerHTML;
-      btn.innerHTML = '✓ Copied!';
-      setTimeout(() => btn.innerHTML = orig, 1500);
+      const b = document.querySelector('.btn-sec');
+      const o = b.textContent;
+      b.textContent = '✓ Copied';
+      setTimeout(() => b.textContent = o, 1500);
     });
   }
 
-  document.getElementById('asinInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') lookupProduct();
+  document.getElementById('asin').addEventListener('keydown', e => {
+    if (e.key === 'Enter') run();
   });
 </script>
 </body>
