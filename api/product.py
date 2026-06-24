@@ -3,61 +3,42 @@ import json
 import re
 import time
 import random
+import traceback
 from urllib.parse import urlparse, parse_qs
 
 import cloudscraper
 from bs4 import BeautifulSoup
 
 
-# ── Rotating real browser fingerprints ─────────────────────────────────────
+# ── Browser profiles ────────────────────────────────────────────────────────
 PROFILES = [
     {
-        "browser": "chrome",
-        "platform": "windows",
-        "desktop": True,
+        "browser": "chrome", "platform": "windows", "desktop": True,
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "lang": "en-IN,en;q=0.9,hi;q=0.8",
+        "lang": "en-IN,en;q=0.9",
         "sec_ch": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-        "sec_ch_mobile": "?0",
-        "sec_ch_platform": '"Windows"',
+        "sec_ch_mobile": "?0", "sec_ch_platform": '"Windows"',
     },
     {
-        "browser": "chrome",
-        "platform": "macos",
-        "desktop": True,
+        "browser": "chrome", "platform": "macos", "desktop": True,
         "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         "lang": "en-GB,en;q=0.9",
         "sec_ch": '"Chromium";v="123", "Google Chrome";v="123", "Not-A.Brand";v="99"',
-        "sec_ch_mobile": "?0",
-        "sec_ch_platform": '"macOS"',
+        "sec_ch_mobile": "?0", "sec_ch_platform": '"macOS"',
     },
     {
-        "browser": "firefox",
-        "platform": "windows",
-        "desktop": True,
+        "browser": "firefox", "platform": "windows", "desktop": True,
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
         "lang": "en-US,en;q=0.5",
-        "sec_ch": None,
-        "sec_ch_mobile": None,
-        "sec_ch_platform": None,
-    },
-    {
-        "browser": "chrome",
-        "platform": "linux",
-        "desktop": True,
-        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "lang": "en-US,en;q=0.8",
-        "sec_ch": '"Chromium";v="122", "Google Chrome";v="122", "Not-A.Brand";v="99"',
-        "sec_ch_mobile": "?0",
-        "sec_ch_platform": '"Linux"',
+        "sec_ch": None, "sec_ch_mobile": None, "sec_ch_platform": None,
     },
 ]
 
 
 def build_headers(profile):
-    headers = {
+    h = {
         "User-Agent": profile["ua"],
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": profile["lang"],
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
@@ -67,285 +48,442 @@ def build_headers(profile):
         "Sec-Fetch-Site": "none",
         "Sec-Fetch-User": "?1",
         "Cache-Control": "max-age=0",
-        "DNT": "1",
     }
     if profile.get("sec_ch"):
-        headers["Sec-Ch-Ua"]          = profile["sec_ch"]
-        headers["Sec-Ch-Ua-Mobile"]   = profile["sec_ch_mobile"]
-        headers["Sec-Ch-Ua-Platform"] = profile["sec_ch_platform"]
-    return headers
+        h["Sec-Ch-Ua"]          = profile["sec_ch"]
+        h["Sec-Ch-Ua-Mobile"]   = profile["sec_ch_mobile"]
+        h["Sec-Ch-Ua-Platform"] = profile["sec_ch_platform"]
+    return h
 
 
 def is_blocked(html):
     lower = html.lower()
-    signals = [
-        "robot check",
-        "enter the characters you see below",
-        "sorry, we just need to make sure you're not a robot",
-        "type the characters you see in this image",
-        "captcha",
+    return any(s in lower for s in [
+        "robot check", "captcha", "validatecaptcha",
+        "enter the characters", "not a robot",
         "api-services-support@amazon.com",
-        "validatecaptcha",
-    ]
-    return any(s in lower for s in signals)
+    ])
 
 
-def make_scraper(profile):
-    scraper = cloudscraper.create_scraper(
-        browser={
-            "browser": profile["browser"],
-            "platform": profile["platform"],
-            "desktop": profile["desktop"],
-        },
-        delay=random.uniform(2, 5),
-    )
-    scraper.headers.update(build_headers(profile))
-    return scraper
+def safe_text(tag, strip=True):
+    """Safely extract text from a BS4 tag, returns None if tag is None."""
+    try:
+        if tag is None:
+            return None
+        text = tag.get_text(separator=" ", strip=strip)
+        return text if text else None
+    except Exception:
+        return None
 
 
-def fetch_page(url, retries=3):
+def clean_price(text):
+    """Extract float price from any string like ₹1,299 or 1299.00"""
+    if not text:
+        return None
+    try:
+        cleaned = re.sub(r"[^\d.]", "", str(text).replace(",", ""))
+        # Remove multiple dots
+        parts = cleaned.split(".")
+        if len(parts) > 2:
+            cleaned = parts[0] + "." + parts[1]
+        val = float(cleaned)
+        # Sanity check — prices between ₹1 and ₹10,00,000
+        return val if 1 <= val <= 1000000 else None
+    except Exception:
+        return None
+
+
+def fetch_page(url, timeout=15):
+    """
+    Try each profile once with short timeout.
+    Vercel has 10s limit — keep total time under 9s.
+    """
     profiles = random.sample(PROFILES, len(PROFILES))
 
-    for attempt in range(retries):
-        profile = profiles[attempt % len(profiles)]
-        scraper = make_scraper(profile)
-        delay = random.uniform(2, 4) + (attempt * random.uniform(1, 3))
-        time.sleep(delay)
-
+    for i, profile in enumerate(profiles):
         try:
-            resp = scraper.get(url, timeout=20, allow_redirects=True)
+            # Only sleep on retries, not first attempt
+            if i > 0:
+                time.sleep(random.uniform(1, 2))
+
+            scraper = cloudscraper.create_scraper(
+                browser={
+                    "browser": profile["browser"],
+                    "platform": profile["platform"],
+                    "desktop": profile["desktop"],
+                },
+            )
+            scraper.headers.update(build_headers(profile))
+
+            resp = scraper.get(url, timeout=timeout, allow_redirects=True)
 
             if resp.status_code == 404:
-                return None, "Product not found (404). Check the ASIN."
-            if resp.status_code == 503:
-                if attempt < retries - 1:
-                    time.sleep(random.uniform(3, 6))
-                    continue
-                return None, "Amazon returned 503. Try again in a moment."
+                return None, "Product not found. Check the ASIN."
+            if resp.status_code in (503, 429):
+                continue  # try next profile
             if resp.status_code != 200:
-                if attempt < retries - 1:
-                    continue
-                return None, f"Unexpected status {resp.status_code}."
+                continue
 
             html = resp.text
+            if not html or len(html) < 500:
+                continue  # empty response
+
             if is_blocked(html):
-                if attempt < retries - 1:
-                    time.sleep(random.uniform(4, 8))
-                    continue
-                return None, "Amazon is showing a CAPTCHA. Try again later."
+                continue  # try next profile
 
             return html, None
 
         except Exception as e:
-            if attempt < retries - 1:
-                time.sleep(random.uniform(2, 4))
-                continue
-            return None, f"Request failed: {str(e)}"
+            if i == len(profiles) - 1:
+                return None, f"Connection error: {str(e)}"
+            continue
 
-    return None, "All retry attempts failed."
-
-
-def clean_price(text):
-    if not text:
-        return None
-    cleaned = re.sub(r"[^\d.]", "", text.replace(",", ""))
-    try:
-        val = float(cleaned)
-        return val if val > 0 else None
-    except:
-        return None
+    return None, "Amazon blocked all requests. Try again in a few minutes."
 
 
 def parse_product(html, asin, domain):
-    soup = BeautifulSoup(html, "lxml")
+    """Parse product data from Amazon HTML with multiple fallback selectors."""
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:
+        soup = BeautifulSoup(html, "html.parser")
 
-    # Title
-    title = None
-    for sel in [{"id": "productTitle"}, {"id": "title"}]:
-        tag = soup.find("span", sel)
-        if tag:
-            title = tag.get_text(strip=True)
-            break
-
-    # Price - Method 1: structured price block
-    price = None
-    for block in soup.find_all("span", {"class": "a-price"}):
-        if "a-text-strike" in block.get("class", []):
-            continue
-        off = block.find("span", {"class": "a-offscreen"})
-        if off:
-            p = clean_price(off.get_text())
-            if p:
-                price = p
-                break
-
-    # Price - Method 2: legacy IDs
-    if not price:
-        for pid in ["priceblock_ourprice", "priceblock_dealprice",
-                    "priceblock_saleprice", "tp_price_block_total_price_ww"]:
-            tag = soup.find("span", {"id": pid})
-            if tag:
-                p = clean_price(tag.get_text())
-                if p:
-                    price = p
-                    break
-
-    # Price - Method 3: whole + fraction
-    if not price:
-        whole = soup.find("span", {"class": "a-price-whole"})
-        fraction = soup.find("span", {"class": "a-price-fraction"})
-        if whole:
-            raw = whole.get_text(strip=True).replace(",", "")
-            frac = fraction.get_text(strip=True) if fraction else "00"
-            try:
-                price = float(f"{raw}{frac}") if frac else float(raw)
-            except:
-                pass
-
-    # MRP
-    mrp = None
-    for block in soup.find_all("span", {"class": "a-price"}):
-        classes = block.get("class", [])
-        if "a-text-price" in classes or "basisPrice" in str(block):
-            off = block.find("span", {"class": "a-offscreen"})
-            if off:
-                m = clean_price(off.get_text())
-                if m and (not price or m > price):
-                    mrp = m
-                    break
-
-    # Discount
-    discount = None
-    if price and mrp and mrp > price:
-        discount = round(((mrp - price) / mrp) * 100, 1)
-    else:
-        badge = soup.find("span", {"class": "savingsPercentage"})
-        if badge:
-            m = re.search(r"(\d+)", badge.get_text())
-            if m:
-                discount = float(m.group(1))
-
-    # Availability
-    availability = "Unknown"
-    avail_div = soup.find("div", {"id": "availability"})
-    if avail_div:
-        txt = avail_div.get_text(strip=True).lower()
-        if "in stock" in txt:
-            availability = "In Stock"
-        elif "out of stock" in txt or "currently unavailable" in txt:
-            availability = "Out of Stock"
-        elif "only" in txt and "left" in txt:
-            availability = "Low Stock"
-        else:
-            availability = avail_div.get_text(strip=True)[:50]
-
-    # Rating
-    rating = None
-    rating_tag = soup.find("span", {"class": "a-icon-alt"})
-    if rating_tag:
-        m = re.search(r"([\d.]+)\s+out of", rating_tag.get_text())
-        if m:
-            rating = float(m.group(1))
-
-    # Reviews
-    reviews = None
-    rev_tag = soup.find("span", {"id": "acrCustomerReviewText"})
-    if rev_tag:
-        reviews = rev_tag.get_text(strip=True)
-
-    # Brand
-    brand = None
-    for bid in ["bylineInfo", "brand"]:
-        tag = soup.find(attrs={"id": bid})
-        if tag:
-            brand = tag.get_text(strip=True)
-            brand = re.sub(r"(Brand:|Visit the|Store)", "", brand).strip()
-            break
-
-    # Image
-    image_url = None
-    img = soup.find("img", {"id": "landingImage"})
-    if img:
-        image_url = img.get("data-old-hires") or img.get("src")
-    if not image_url:
-        img = soup.find("img", {"id": "imgBlkFront"})
-        if img:
-            image_url = img.get("src")
-
-    # Category
-    category = None
-    bc = soup.find("div", {"id": "wayfinding-breadcrumbs_feature_div"})
-    if bc:
-        crumbs = [a.get_text(strip=True) for a in bc.find_all("a")]
-        if crumbs:
-            category = " > ".join(crumbs[-2:])
-
-    # Seller
-    seller = None
-    for sid in ["merchant-info", "sellerProfileTriggerId"]:
-        tag = soup.find(attrs={"id": sid})
-        if tag:
-            seller = tag.get_text(strip=True)[:80]
-            break
-
-    return {
+    result = {
         "asin":             asin,
         "url":              f"https://www.{domain}/dp/{asin}",
-        "title":            title,
-        "price":            price,
-        "mrp":              mrp,
-        "discount_percent": discount,
+        "title":            None,
+        "price":            None,
+        "mrp":              None,
+        "discount_percent": None,
         "currency":         "INR" if domain == "amazon.in" else "USD",
-        "availability":     availability,
-        "rating":           rating,
-        "reviews":          reviews,
-        "brand":            brand,
-        "category":         category,
-        "image_url":        image_url,
-        "seller":           seller,
+        "availability":     "Unknown",
+        "rating":           None,
+        "reviews":          None,
+        "brand":            None,
+        "category":         None,
+        "image_url":        None,
+        "seller":           None,
         "status":           200,
     }
 
+    # ── Title ──────────────────────────────────────────────────────────────
+    try:
+        for sel in [{"id": "productTitle"}, {"id": "title"}, {"class": "product-title"}]:
+            tag = soup.find("span", sel) or soup.find("h1", sel)
+            if tag:
+                t = safe_text(tag)
+                if t and len(t) > 3:
+                    result["title"] = t
+                    break
+    except Exception:
+        pass
+
+    # ── Price ───────────────────────────────────────────────────────────────
+    try:
+        # Method 1: apex price block (most reliable on amazon.in)
+        apex = soup.find("div", {"id": "apex_desktop"}) or \
+               soup.find("div", {"id": "corePriceDisplay_desktop_feature_div"}) or \
+               soup.find("div", {"id": "corePrice_desktop"}) or \
+               soup.find("div", {"id": "price"})
+
+        if apex:
+            for block in apex.find_all("span", {"class": "a-price"}):
+                if "a-text-strike" in " ".join(block.get("class", [])):
+                    continue
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    p = clean_price(safe_text(off))
+                    if p:
+                        result["price"] = p
+                        break
+
+        # Method 2: global price spans
+        if not result["price"]:
+            for block in soup.find_all("span", {"class": "a-price"}):
+                classes = " ".join(block.get("class", []))
+                if "a-text-strike" in classes or "basisPrice" in classes:
+                    continue
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    p = clean_price(safe_text(off))
+                    if p:
+                        result["price"] = p
+                        break
+
+        # Method 3: legacy price IDs
+        if not result["price"]:
+            for pid in [
+                "priceblock_ourprice", "priceblock_dealprice",
+                "priceblock_saleprice", "tp_price_block_total_price_ww",
+                "kindle-price", "buyNewSection",
+            ]:
+                tag = soup.find(attrs={"id": pid})
+                if tag:
+                    p = clean_price(safe_text(tag))
+                    if p:
+                        result["price"] = p
+                        break
+
+        # Method 4: price-whole + price-fraction
+        if not result["price"]:
+            whole = soup.find("span", {"class": "a-price-whole"})
+            frac  = soup.find("span", {"class": "a-price-fraction"})
+            if whole:
+                w = re.sub(r"[^\d]", "", safe_text(whole) or "")
+                f = re.sub(r"[^\d]", "", safe_text(frac) or "00")
+                try:
+                    result["price"] = float(f"{w}.{f}") if w else None
+                except Exception:
+                    pass
+
+        # Method 5: regex scan entire page for price pattern
+        if not result["price"]:
+            matches = re.findall(r'["\']price["\']\s*:\s*["\']?([\d,]+\.?\d*)["\']?', html)
+            for m in matches:
+                p = clean_price(m)
+                if p and p > 10:
+                    result["price"] = p
+                    break
+
+    except Exception:
+        pass
+
+    # ── MRP ─────────────────────────────────────────────────────────────────
+    try:
+        for block in soup.find_all("span", {"class": "a-price"}):
+            classes = " ".join(block.get("class", []))
+            if "a-text-price" in classes or "basisPrice" in classes:
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    m = clean_price(safe_text(off))
+                    if m and (not result["price"] or m > result["price"]):
+                        result["mrp"] = m
+                        break
+
+        # Fallback: find strikethrough price
+        if not result["mrp"]:
+            strike = soup.find("span", {"class": "a-text-strike"})
+            if strike:
+                m = clean_price(safe_text(strike))
+                if m:
+                    result["mrp"] = m
+    except Exception:
+        pass
+
+    # ── Discount ─────────────────────────────────────────────────────────────
+    try:
+        if result["price"] and result["mrp"] and result["mrp"] > result["price"]:
+            result["discount_percent"] = round(
+                ((result["mrp"] - result["price"]) / result["mrp"]) * 100, 1
+            )
+        else:
+            for cls in ["savingsPercentage", "a-color-price"]:
+                tag = soup.find("span", {"class": cls})
+                if tag:
+                    m = re.search(r"(\d+)%", safe_text(tag) or "")
+                    if m:
+                        result["discount_percent"] = float(m.group(1))
+                        break
+    except Exception:
+        pass
+
+    # ── Availability ─────────────────────────────────────────────────────────
+    try:
+        avail_div = soup.find("div", {"id": "availability"}) or \
+                    soup.find("div", {"id": "outOfStock"})
+        if avail_div:
+            txt = (safe_text(avail_div) or "").lower()
+            if "in stock" in txt:
+                result["availability"] = "In Stock"
+            elif "out of stock" in txt or "currently unavailable" in txt or "unavailable" in txt:
+                result["availability"] = "Out of Stock"
+            elif "only" in txt and "left" in txt:
+                result["availability"] = "Low Stock"
+            elif "usually" in txt or "days" in txt:
+                result["availability"] = "Ships Soon"
+            else:
+                raw = (safe_text(avail_div) or "Unknown")[:50].strip()
+                result["availability"] = raw if raw else "Unknown"
+        elif result["price"]:
+            # If we have a price, item is likely in stock
+            result["availability"] = "In Stock"
+    except Exception:
+        pass
+
+    # ── Rating ───────────────────────────────────────────────────────────────
+    try:
+        for sel in [{"class": "a-icon-alt"}, {"id": "acrPopover"}]:
+            tag = soup.find("span", sel) or soup.find("i", sel)
+            if tag:
+                txt = safe_text(tag) or ""
+                m = re.search(r"([\d.]+)\s*out\s*of\s*5", txt)
+                if m:
+                    result["rating"] = float(m.group(1))
+                    break
+
+        if not result["rating"]:
+            m = re.search(r'"ratingScore"\s*:\s*"([\d.]+)"', html)
+            if m:
+                result["rating"] = float(m.group(1))
+    except Exception:
+        pass
+
+    # ── Reviews ──────────────────────────────────────────────────────────────
+    try:
+        rev_tag = soup.find("span", {"id": "acrCustomerReviewText"})
+        if rev_tag:
+            result["reviews"] = safe_text(rev_tag)
+        if not result["reviews"]:
+            m = re.search(r'"totalReviewCount"\s*:\s*(\d+)', html)
+            if m:
+                result["reviews"] = f"{m.group(1)} ratings"
+    except Exception:
+        pass
+
+    # ── Brand ────────────────────────────────────────────────────────────────
+    try:
+        for bid in ["bylineInfo", "brand"]:
+            tag = soup.find(attrs={"id": bid})
+            if tag:
+                b = safe_text(tag) or ""
+                b = re.sub(r"(Brand:|Visit the|Store|\n)", "", b).strip()
+                if b:
+                    result["brand"] = b[:60]
+                    break
+
+        if not result["brand"]:
+            # Try product details table
+            rows = soup.find_all("tr")
+            for row in rows:
+                th = row.find("th") or row.find("td")
+                td = row.find_all("td")
+                if th and td and "brand" in (safe_text(th) or "").lower():
+                    b = safe_text(td[-1])
+                    if b:
+                        result["brand"] = b[:60]
+                        break
+    except Exception:
+        pass
+
+    # ── Image ────────────────────────────────────────────────────────────────
+    try:
+        for img_id in ["landingImage", "imgBlkFront", "main-image"]:
+            img = soup.find("img", {"id": img_id})
+            if img:
+                url = img.get("data-old-hires") or img.get("data-src") or img.get("src")
+                if url and url.startswith("http"):
+                    result["image_url"] = url
+                    break
+
+        if not result["image_url"]:
+            # Try JSON embedded image data
+            m = re.search(r'"hiRes"\s*:\s*"(https://[^"]+)"', html)
+            if m:
+                result["image_url"] = m.group(1)
+    except Exception:
+        pass
+
+    # ── Category ─────────────────────────────────────────────────────────────
+    try:
+        bc = soup.find("div", {"id": "wayfinding-breadcrumbs_feature_div"}) or \
+             soup.find("ul", {"class": "a-breadcrumb"})
+        if bc:
+            crumbs = [a.get_text(strip=True) for a in bc.find_all("a") if a.get_text(strip=True)]
+            if crumbs:
+                result["category"] = " > ".join(crumbs[-2:])
+    except Exception:
+        pass
+
+    # ── Seller ───────────────────────────────────────────────────────────────
+    try:
+        for sid in ["merchant-info", "sellerProfileTriggerId", "tabular-buybox-truncate-0"]:
+            tag = soup.find(attrs={"id": sid})
+            if tag:
+                s = safe_text(tag)
+                if s and len(s) > 1:
+                    result["seller"] = s[:80]
+                    break
+    except Exception:
+        pass
+
+    return result
+
 
 def scrape_amazon(asin, domain="amazon.in"):
-    url = f"https://www.{domain}/dp/{asin}?th=1&psc=1"
-    html, error = fetch_page(url)
-    if error:
-        return {"error": error, "status": 422}
-    data = parse_product(html, asin, domain)
-    if not data["title"] and not data["price"]:
-        return {"error": "Could not extract product data. Amazon may have updated its page structure.", "status": 422}
-    return data
+    try:
+        url = f"https://www.{domain}/dp/{asin}?th=1&psc=1"
+        html, error = fetch_page(url, timeout=12)
+
+        if error:
+            return {"error": error, "status": 422}
+
+        data = parse_product(html, asin, domain)
+
+        if not data.get("title") and not data.get("price"):
+            return {
+                "error": "Could not extract product data. Amazon may have changed its page layout. Try again.",
+                "status": 422,
+            }
+
+        return data
+
+    except Exception as e:
+        return {
+            "error": f"Scraper crashed: {str(e)}",
+            "debug": traceback.format_exc()[-300:],
+            "status": 500,
+        }
 
 
-# ── Vercel serverless handler ───────────────────────────────────────────────
+def json_response(data):
+    """Always returns valid JSON bytes, never raises."""
+    try:
+        return json.dumps(data, ensure_ascii=False).encode("utf-8")
+    except Exception as e:
+        return json.dumps({"error": f"JSON encoding failed: {str(e)}", "status": 500}).encode("utf-8")
+
+
+# ── Vercel serverless handler ────────────────────────────────────────────────
 class handler(BaseHTTPRequestHandler):
 
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        params = parse_qs(parsed.query)
-
-        asin   = params.get("asin",   [""])[0].strip().upper()
-        domain = params.get("domain", ["amazon.in"])[0].strip()
-        allowed = ["amazon.in", "amazon.com", "amazon.co.uk", "amazon.de", "amazon.co.jp"]
-
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+    def send_json(self, data, status=200):
+        body = json_response(data)
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+        self.wfile.write(body)
 
-        if not asin or not re.match(r"^[A-Z0-9]{10}$", asin):
-            self.wfile.write(json.dumps({"error": "Invalid ASIN."}).encode())
-            return
+    def do_GET(self):
+        try:
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
 
-        if domain not in allowed:
-            self.wfile.write(json.dumps({"error": "Unsupported domain."}).encode())
-            return
+            asin   = params.get("asin",   [""])[0].strip().upper()
+            domain = params.get("domain", ["amazon.in"])[0].strip()
+            allowed = ["amazon.in", "amazon.com", "amazon.co.uk", "amazon.de", "amazon.co.jp"]
 
-        result = scrape_amazon(asin, domain)
-        self.wfile.write(json.dumps(result).encode())
+            if not asin or not re.match(r"^[A-Z0-9]{10}$", asin):
+                self.send_json({"error": "Invalid ASIN. Must be 10 alphanumeric characters.", "status": 400}, 400)
+                return
+
+            if domain not in allowed:
+                self.send_json({"error": "Unsupported domain.", "status": 400}, 400)
+                return
+
+            result = scrape_amazon(asin, domain)
+            http_status = result.get("status", 200)
+            # Only use 200 or 422 for HTTP status — avoid Vercel treating 5xx as infra error
+            self.send_json(result, 200)
+
+        except Exception as e:
+            self.send_json({
+                "error": f"Handler error: {str(e)}",
+                "status": 500
+            }, 200)
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -353,3 +491,6 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # Suppress default request logs
