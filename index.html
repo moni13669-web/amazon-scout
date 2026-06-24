@@ -5,200 +5,176 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Amazon Price Scout</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <!-- SheetJS for reading Excel/CSV uploads and writing Excel reports -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:       #0d0f14;
-      --surface:  #151820;
-      --surface2: #1c1f2b;
-      --surface3: #232737;
-      --border:   #2a2e40;
-      --border2:  #353a52;
-      --accent:   #f5a623;
-      --accent2:  #e8951a;
-      --green:    #22c55e;
-      --red:      #ef4444;
-      --yellow:   #eab308;
-      --text:     #f0f2f8;
-      --text2:    #9ca3c4;
-      --text3:    #5c6285;
-      --mono:     'JetBrains Mono', monospace;
-      --sans:     'Inter', sans-serif;
-      --r:        12px;
-      --rs:       7px;
+      --bg:      #0d0f14; --surface: #151820; --surface2: #1c1f2b;
+      --surface3: #232737; --border: #2a2e40; --border2: #353a52;
+      --accent:  #f5a623; --accent2: #e8951a;
+      --green:   #22c55e; --red: #ef4444; --yellow: #eab308;
+      --text:    #f0f2f8; --text2: #9ca3c4; --text3: #5c6285;
+      --mono:    'JetBrains Mono', monospace; --sans: 'Inter', sans-serif;
+      --r: 12px; --rs: 7px;
     }
-    body {
-      background: var(--bg); color: var(--text);
-      font-family: var(--sans); min-height: 100vh;
-      display: flex; flex-direction: column;
-    }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; display: flex; flex-direction: column; }
 
-    /* Header */
-    header {
-      padding: 1rem 2rem; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 12px;
-      background: var(--surface);
-    }
+    /* ── Header ── */
+    header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; background: var(--surface); }
     .logo { width: 34px; height: 34px; background: var(--accent); border-radius: 8px; display: grid; place-items: center; font-size: 16px; }
     .logo-text { font-size: 16px; font-weight: 700; }
     .logo-sub  { font-size: 11px; color: var(--text3); margin-top: 1px; }
-    .header-right { margin-left: auto; }
-    .domain-sel {
-      background: var(--surface2); border: 1px solid var(--border);
-      color: var(--text2); font-family: var(--mono); font-size: 12px;
-      padding: 6px 10px; border-radius: var(--rs); outline: none; cursor: pointer;
-    }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .domain-sel { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); font-family: var(--mono); font-size: 12px; padding: 6px 10px; border-radius: var(--rs); outline: none; cursor: pointer; }
     .domain-sel:focus { border-color: var(--accent); }
 
-    /* Main */
-    main { flex: 1; max-width: 680px; margin: 0 auto; width: 100%; padding: 3rem 1.5rem 4rem; }
+    /* ── Tabs ── */
+    main { flex: 1; max-width: 900px; margin: 0 auto; width: 100%; padding: 2rem 1.5rem 4rem; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 4px; }
+    .tab { flex: 1; text-align: center; padding: 8px 16px; border-radius: 9px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text3); transition: all 0.15s; border: none; background: none; }
+    .tab.active { background: var(--surface3); color: var(--text); border: 1px solid var(--border2); }
+    .tab:hover:not(.active) { color: var(--text2); }
+    .panel { display: none; }
+    .panel.active { display: block; }
 
-    .hero { text-align: center; margin-bottom: 2.5rem; }
-    .hero h1 { font-size: clamp(24px, 4vw, 36px); font-weight: 700; letter-spacing: -0.4px; }
-    .hero h1 span { color: var(--accent); }
-    .hero p { color: var(--text2); font-size: 14px; margin-top: 8px; }
+    /* ── Single lookup ── */
+    .hero { text-align: center; margin-bottom: 2rem; }
+    .hero h2 { font-size: 26px; font-weight: 700; }
+    .hero h2 span { color: var(--accent); }
+    .hero p { color: var(--text2); font-size: 13px; margin-top: 6px; }
 
-    /* Search */
-    .search-box {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 1.1rem; margin-bottom: 1.25rem;
-    }
+    .search-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 1.1rem; margin-bottom: 1.25rem; }
     .search-row { display: flex; gap: 8px; }
-    .search-input {
-      flex: 1; background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--rs); color: var(--text);
-      font-family: var(--mono); font-size: 15px;
-      padding: 11px 14px; letter-spacing: 0.06em; outline: none;
-      transition: border-color 0.15s;
-    }
+    .search-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--rs); color: var(--text); font-family: var(--mono); font-size: 15px; padding: 11px 14px; letter-spacing: 0.06em; outline: none; transition: border-color 0.15s; }
     .search-input::placeholder { color: var(--text3); }
     .search-input:focus { border-color: var(--accent); }
-    .fetch-btn {
-      background: var(--accent); border: none; border-radius: var(--rs);
-      color: #0d0f14; font-family: var(--sans); font-size: 14px; font-weight: 700;
-      padding: 11px 22px; cursor: pointer; white-space: nowrap;
-      transition: background 0.12s, transform 0.1s;
-      display: flex; align-items: center; gap: 6px;
-    }
-    .fetch-btn:hover  { background: var(--accent2); }
+    .fetch-btn { background: var(--accent); border: none; border-radius: var(--rs); color: #0d0f14; font-family: var(--sans); font-size: 13px; font-weight: 700; padding: 11px 20px; cursor: pointer; white-space: nowrap; transition: background 0.12s, transform 0.1s; display: flex; align-items: center; gap: 6px; }
+    .fetch-btn:hover { background: var(--accent2); }
     .fetch-btn:active { transform: scale(0.97); }
     .fetch-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-
     .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
     .chip-label { font-size: 11px; color: var(--text3); }
-    .chip {
-      font-family: var(--mono); font-size: 11px;
-      padding: 3px 9px; border: 1px solid var(--border2);
-      border-radius: 999px; cursor: pointer; color: var(--text2);
-      background: var(--surface2); transition: border-color 0.1s, color 0.1s;
-    }
+    .chip { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border: 1px solid var(--border2); border-radius: 999px; cursor: pointer; color: var(--text2); background: var(--surface2); transition: border-color 0.1s, color 0.1s; }
     .chip:hover { border-color: var(--accent); color: var(--accent); }
 
-    /* Loader */
-    .loader { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 2.5rem 0; }
+    .loader { display: none; flex-direction: column; align-items: center; gap: 12px; padding: 2.5rem 0; }
     .loader.show { display: flex; }
-    .ring {
-      width: 40px; height: 40px;
-      border: 3px solid var(--border2); border-top-color: var(--accent);
-      border-radius: 50%; animation: spin 0.7s linear infinite;
-    }
+    .ring { width: 38px; height: 38px; border: 3px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .loader-msg { color: var(--text2); font-size: 13px; }
     .loader-attempt { color: var(--text3); font-size: 11px; font-family: var(--mono); }
 
-    /* Error */
-    .error-box {
-      display: none; background: #1e1212; border: 1px solid #5a1d1d;
-      border-radius: var(--r); padding: 0.9rem 1.1rem;
-      color: var(--red); font-size: 13px; gap: 8px;
-      align-items: center; margin-bottom: 1rem;
-    }
+    .error-box { display: none; background: #1e1212; border: 1px solid #5a1d1d; border-radius: var(--r); padding: 0.9rem 1.1rem; color: var(--red); font-size: 13px; gap: 8px; align-items: center; margin-bottom: 1rem; }
     .error-box.show { display: flex; }
 
-    /* Result card */
     .result { display: none; }
     .result.show { display: block; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 1.5rem; }
 
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 1.5rem;
-    }
-
-    /* Availability badge */
-    .badge {
-      display: inline-block; font-size: 10px; font-weight: 700;
-      letter-spacing: 0.07em; text-transform: uppercase;
-      padding: 3px 10px; border-radius: 4px; margin-bottom: 12px;
-    }
+    .badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; padding: 3px 10px; border-radius: 4px; margin-bottom: 12px; }
     .badge-in  { background: #0f2e1a; color: var(--green);  border: 1px solid #1a4d2a; }
     .badge-out { background: #2e0f0f; color: var(--red);    border: 1px solid #4d1a1a; }
     .badge-low { background: #2e2310; color: var(--yellow); border: 1px solid #4d3a18; }
     .badge-unk { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
 
-    .product-title {
-      font-size: 16px; font-weight: 600; line-height: 1.45;
-      color: var(--text); margin-bottom: 1.25rem;
-    }
-
-    /* 3 stat boxes */
+    .product-title { font-size: 15px; font-weight: 600; line-height: 1.45; color: var(--text); margin-bottom: 1.25rem; }
     .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1.25rem; }
-    .stat {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--rs); padding: 0.85rem 1rem;
-    }
+    .stat { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--rs); padding: 0.85rem 1rem; }
     .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text3); margin-bottom: 5px; }
     .stat-value { font-size: 22px; font-weight: 700; color: var(--text); font-family: var(--mono); }
     .stat-value.price-val { color: var(--accent); }
-    .stat-value.rating-val { color: var(--yellow); font-size: 18px; }
+    .stat-value.rating-val { color: var(--yellow); font-size: 16px; }
     .stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
-
-    /* Footer row */
-    .card-footer {
-      border-top: 1px solid var(--border); padding-top: 0.9rem;
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 10px; flex-wrap: wrap;
-    }
+    .card-footer { border-top: 1px solid var(--border); padding-top: 0.9rem; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
     .asin-mono { font-family: var(--mono); font-size: 11px; color: var(--text3); }
     .asin-mono span { color: var(--text2); }
     .footer-btns { display: flex; gap: 8px; }
-    .btn-sec {
-      background: var(--surface3); border: 1px solid var(--border2);
-      color: var(--text2); font-size: 11px; font-weight: 500;
-      padding: 6px 12px; border-radius: var(--rs); cursor: pointer;
-      transition: background 0.1s; display: flex; align-items: center; gap: 5px;
-    }
+    .btn-sec { background: var(--surface3); border: 1px solid var(--border2); color: var(--text2); font-size: 11px; font-weight: 500; padding: 6px 12px; border-radius: var(--rs); cursor: pointer; transition: background 0.1s; display: flex; align-items: center; gap: 5px; }
     .btn-sec:hover { background: var(--border2); color: var(--text); }
-    .btn-amz {
-      background: var(--accent); border: none; color: #0d0f14;
-      font-size: 11px; font-weight: 700; padding: 6px 14px;
-      border-radius: var(--rs); cursor: pointer; transition: background 0.1s;
-    }
+    .btn-amz { background: var(--accent); border: none; color: #0d0f14; font-size: 11px; font-weight: 700; padding: 6px 14px; border-radius: var(--rs); cursor: pointer; }
     .btn-amz:hover { background: var(--accent2); }
-
-    /* History */
     .history { margin-top: 1.25rem; }
-    .history-title {
-      font-size: 11px; font-weight: 600; color: var(--text3);
-      text-transform: uppercase; letter-spacing: 0.07em;
-      margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
-    }
-    .history-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-    .history-box {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--rs); padding: 0.75rem 1rem;
-      font-size: 12px; color: var(--text3); line-height: 1.8;
-      font-family: var(--mono);
-    }
-    .history-box b { color: var(--text2); font-family: var(--sans); font-size: 11px; }
+    .section-title { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .history-box { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--rs); padding: 0.75rem 1rem; font-size: 12px; color: var(--text3); line-height: 1.8; font-family: var(--mono); white-space: pre-wrap; }
 
-    footer {
-      padding: 1rem 2rem; border-top: 1px solid var(--border);
-      text-align: center; font-size: 11px; color: var(--text3);
+    /* ── Bulk upload panel ── */
+    .upload-zone {
+      border: 2px dashed var(--border2); border-radius: var(--r);
+      padding: 3rem 2rem; text-align: center; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      background: var(--surface); margin-bottom: 1.25rem;
     }
+    .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: #1a1c25; }
+    .upload-zone input { display: none; }
+    .upload-icon { font-size: 40px; margin-bottom: 12px; }
+    .upload-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .upload-sub { font-size: 12px; color: var(--text3); }
+    .upload-sub span { color: var(--accent); text-decoration: underline; cursor: pointer; }
 
-    @media (max-width: 500px) {
+    .file-info { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 1rem 1.25rem; margin-bottom: 1rem; display: none; align-items: center; gap: 12px; }
+    .file-info.show { display: flex; }
+    .file-icon { font-size: 24px; }
+    .file-details { flex: 1; }
+    .file-name { font-size: 13px; font-weight: 600; color: var(--text); }
+    .file-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .file-clear { background: none; border: 1px solid var(--border2); color: var(--text3); font-size: 11px; padding: 4px 10px; border-radius: var(--rs); cursor: pointer; }
+    .file-clear:hover { color: var(--red); border-color: var(--red); }
+
+    .bulk-btn { background: var(--accent); border: none; border-radius: var(--rs); color: #0d0f14; font-family: var(--sans); font-size: 14px; font-weight: 700; padding: 12px 24px; cursor: pointer; width: 100%; transition: background 0.12s; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 1.25rem; }
+    .bulk-btn:hover { background: var(--accent2); }
+    .bulk-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* Progress */
+    .progress-wrap { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 1.25rem; margin-bottom: 1.25rem; }
+    .progress-wrap.show { display: block; }
+    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .progress-label { font-size: 13px; font-weight: 600; color: var(--text); }
+    .progress-count { font-size: 12px; color: var(--text2); font-family: var(--mono); }
+    .progress-bar-bg { background: var(--surface3); border-radius: 999px; height: 6px; overflow: hidden; margin-bottom: 10px; }
+    .progress-bar { height: 100%; background: var(--accent); border-radius: 999px; width: 0%; transition: width 0.3s; }
+    .progress-current { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+
+    /* Results table */
+    .bulk-results { display: none; }
+    .bulk-results.show { display: block; }
+    .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+    .results-title { font-size: 14px; font-weight: 600; color: var(--text); }
+    .results-meta { font-size: 12px; color: var(--text3); }
+    .download-btns { display: flex; gap: 8px; }
+    .dl-btn { padding: 7px 14px; border-radius: var(--rs); font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; border: none; transition: background 0.12s; }
+    .dl-csv { background: var(--surface3); border: 1px solid var(--border2); color: var(--text2); }
+    .dl-csv:hover { background: var(--border2); color: var(--text); }
+    .dl-xlsx { background: var(--accent); color: #0d0f14; }
+    .dl-xlsx:hover { background: var(--accent2); }
+
+    .more-note { font-size: 11px; color: var(--text3); background: var(--surface2); border: 1px solid var(--border); border-radius: var(--rs); padding: 8px 12px; margin-bottom: 12px; display: none; }
+    .more-note.show { display: block; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th { background: var(--surface2); color: var(--text3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td { padding: 10px 12px; color: var(--text2); vertical-align: middle; }
+    tbody td.asin-cell { font-family: var(--mono); color: var(--text); font-size: 11px; }
+    tbody td.title-cell { color: var(--text); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tbody td.price-cell { color: var(--accent); font-family: var(--mono); font-weight: 600; }
+    tbody td.rating-cell { color: var(--yellow); }
+    .tbl-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; }
+    .tbl-in  { background: #0f2e1a; color: var(--green);  }
+    .tbl-out { background: #2e0f0f; color: var(--red);    }
+    .tbl-low { background: #2e2310; color: var(--yellow); }
+    .tbl-unk { background: var(--surface3); color: var(--text3); }
+    .tbl-err { background: #2e1a0f; color: #e8782a; }
+    .table-wrap { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; overflow-x: auto; }
+
+    footer { padding: 1rem 2rem; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text3); }
+
+    @media (max-width: 600px) {
       .stats { grid-template-columns: 1fr 1fr; }
-      .stat-value { font-size: 18px; }
+      main { padding: 1.5rem 1rem 3rem; }
+      header { padding: 1rem; }
     }
   </style>
 </head>
@@ -221,267 +197,545 @@
 </header>
 
 <main>
-  <div class="hero">
-    <h1>Amazon <span>Price Scout</span></h1>
-    <p>Enter an ASIN to get live title, price & rating</p>
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('single')">Single ASIN Lookup</button>
+    <button class="tab" onclick="switchTab('bulk')">Bulk Upload (Excel / CSV)</button>
   </div>
 
-  <div class="search-box">
-    <div class="search-row">
-      <input class="search-input" id="asin" type="text"
-        placeholder="e.g. B0FY66N9RX" maxlength="10"
-        autocomplete="off" spellcheck="false"/>
-      <button class="fetch-btn" id="fetchBtn" onclick="run()">
-        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
-        Fetch
-      </button>
+  <!-- ══ SINGLE PANEL ══════════════════════════════════════════ -->
+  <div class="panel active" id="panel-single">
+    <div class="hero">
+      <h2>Amazon <span>Price Scout</span></h2>
+      <p>Enter an ASIN to get live title, price & rating</p>
     </div>
-    <div class="chips">
-      <span class="chip-label">Try:</span>
-      <span class="chip" onclick="go('B0FY66N9RX')">B0FY66N9RX</span>
-      <span class="chip" onclick="go('B0DGXWJLX4')">B0DGXWJLX4</span>
-      <span class="chip" onclick="go('B09G9FPHY6')">B09G9FPHY6</span>
-      <span class="chip" onclick="go('B08N5WRWNW')">B08N5WRWNW</span>
-    </div>
-  </div>
 
-  <div class="error-box" id="errBox">
-    <span>⚠️</span><span id="errMsg"></span>
-  </div>
-
-  <div class="loader" id="loader">
-    <div class="ring"></div>
-    <div class="loader-msg">Fetching from Amazon…</div>
-    <div class="loader-attempt" id="attemptMsg">Attempt 1</div>
-  </div>
-
-  <div class="result" id="result">
-    <div class="card">
-      <div id="badge" class="badge badge-unk">Unknown</div>
-      <div class="product-title" id="title">—</div>
-
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-label">Current Price</div>
-          <div class="stat-value price-val" id="price">—</div>
-          <div class="stat-sub" id="currency">INR</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Rating</div>
-          <div class="stat-value rating-val" id="rating">—</div>
-          <div class="stat-sub">out of 5</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Last Fetched</div>
-          <div class="stat-value" style="font-size:13px;color:var(--text2);" id="fetchedAt">—</div>
-          <div class="stat-sub" id="fetchedDate">—</div>
-        </div>
+    <div class="search-box">
+      <div class="search-row">
+        <input class="search-input" id="asin" type="text" placeholder="e.g. B0FY66N9RX" maxlength="10" autocomplete="off" spellcheck="false"/>
+        <button class="fetch-btn" id="fetchBtn" onclick="run()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          Fetch
+        </button>
       </div>
-
-      <div class="card-footer">
-        <div class="asin-mono">ASIN: <span id="asinDisplay">—</span></div>
-        <div class="footer-btns">
-          <button class="btn-sec" onclick="copyAsin()">Copy ASIN</button>
-          <button class="btn-sec" onclick="run()">↻ Refresh</button>
-          <button class="btn-amz" onclick="openAmz()">View on Amazon ↗</button>
-        </div>
+      <div class="chips">
+        <span class="chip-label">Try:</span>
+        <span class="chip" onclick="go('B0FY66N9RX')">B0FY66N9RX</span>
+        <span class="chip" onclick="go('B0DGXWJLX4')">B0DGXWJLX4</span>
+        <span class="chip" onclick="go('B09G9FPHY6')">B09G9FPHY6</span>
+        <span class="chip" onclick="go('B08N5WRWNW')">B08N5WRWNW</span>
       </div>
     </div>
 
-    <div class="history">
-      <div class="history-title">Price History</div>
-      <div class="history-box" id="historyBox">No history yet for this ASIN.</div>
+    <div class="error-box" id="errBox"><span>⚠️</span><span id="errMsg"></span></div>
+
+    <div class="loader" id="loader">
+      <div class="ring"></div>
+      <div class="loader-msg">Fetching from Amazon…</div>
+      <div class="loader-attempt" id="attemptMsg">Connecting…</div>
+    </div>
+
+    <div class="result" id="result">
+      <div class="card">
+        <div id="badge" class="badge badge-unk">Unknown</div>
+        <div class="product-title" id="title">—</div>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-label">Current Price</div>
+            <div class="stat-value price-val" id="price">—</div>
+            <div class="stat-sub" id="currency">INR</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Rating</div>
+            <div class="stat-value rating-val" id="rating">—</div>
+            <div class="stat-sub">out of 5</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Last Fetched</div>
+            <div class="stat-value" style="font-size:13px;color:var(--text2);" id="fetchedAt">—</div>
+            <div class="stat-sub" id="fetchedDate">—</div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <div class="asin-mono">ASIN: <span id="asinDisplay">—</span></div>
+          <div class="footer-btns">
+            <button class="btn-sec" onclick="copyAsin()">Copy ASIN</button>
+            <button class="btn-sec" onclick="run()">↻ Refresh</button>
+            <button class="btn-amz" onclick="openAmz()">View on Amazon ↗</button>
+          </div>
+        </div>
+      </div>
+      <div class="history">
+        <div class="section-title">Price History</div>
+        <div class="history-box" id="historyBox">No history yet for this ASIN.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ BULK PANEL ════════════════════════════════════════════ -->
+  <div class="panel" id="panel-bulk">
+    <div class="hero">
+      <h2>Bulk <span>ASIN Lookup</span></h2>
+      <p>Upload an Excel or CSV file with an <strong>ASIN</strong> column — we'll fetch all products and generate a report</p>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="handleDrop(event)">
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])"/>
+      <div class="upload-icon">📂</div>
+      <div class="upload-title">Drop your file here or <span>browse</span></div>
+      <div class="upload-sub">Supports .xlsx, .xls, .csv — must have a column named <strong>ASIN</strong></div>
+    </div>
+
+    <!-- File info -->
+    <div class="file-info" id="fileInfo">
+      <div class="file-icon" id="fileIcon">📊</div>
+      <div class="file-details">
+        <div class="file-name" id="fileName">—</div>
+        <div class="file-meta" id="fileMeta">—</div>
+      </div>
+      <button class="file-clear" onclick="clearFile()">✕ Clear</button>
+    </div>
+
+    <button class="bulk-btn" id="bulkBtn" onclick="startBulk()" disabled>
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      Fetch All ASINs
+    </button>
+
+    <!-- Progress -->
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-header">
+        <div class="progress-label">Fetching products…</div>
+        <div class="progress-count" id="progressCount">0 / 0</div>
+      </div>
+      <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-current" id="progressCurrent">Starting…</div>
+    </div>
+
+    <!-- Results table -->
+    <div class="bulk-results" id="bulkResults">
+      <div class="results-header">
+        <div>
+          <div class="results-title" id="resultsTitle">Results</div>
+          <div class="results-meta" id="resultsMeta"></div>
+        </div>
+        <div class="download-btns">
+          <button class="dl-btn dl-csv" onclick="downloadCSV()">⬇ Download CSV</button>
+          <button class="dl-btn dl-xlsx" onclick="downloadXLSX()">⬇ Download Excel</button>
+        </div>
+      </div>
+      <div class="more-note" id="moreNote">
+        📋 Showing first 10 results on screen. Download the report to see all data.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ASIN</th>
+              <th>Title</th>
+              <th>Price</th>
+              <th>Rating</th>
+              <th>Availability</th>
+            </tr>
+          </thead>
+          <tbody id="bulkTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </main>
 
-<footer>
-  Price Scout — fetches title, price & rating only · Deployed on Vercel
-</footer>
+<footer>Price Scout · Single &amp; Bulk Amazon lookup · Deployed on Vercel</footer>
 
 <script>
-  const API = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
-  let currentAsin = '';
-  let currentUrl  = '';
-  let attemptCount = 0;
-  let retryTimer = null;
+const API = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
-  // ── History ──────────────────────────────────────────────────
-  function saveHistory(asin, price) {
-    if (!price) return;
-    const key = `ps_${asin}`;
-    const arr = JSON.parse(localStorage.getItem(key) || '[]');
-    arr.push({ price, ts: Date.now() });
-    if (arr.length > 50) arr.splice(0, arr.length - 50);
-    localStorage.setItem(key, JSON.stringify(arr));
+/* ══ Tab switching ══════════════════════════════════════════════════════════ */
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (tab === 'single' ? 0 : 1) === i));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`panel-${tab}`).classList.add('active');
+}
+
+/* ══ Single lookup ══════════════════════════════════════════════════════════ */
+let currentAsin = '', currentUrl = '', retryTimer = null, attemptCount = 0;
+
+function saveHistory(asin, price) {
+  if (!price) return;
+  const key = `ps_${asin}`;
+  const arr = JSON.parse(localStorage.getItem(key) || '[]');
+  arr.push({ price, ts: Date.now() });
+  if (arr.length > 50) arr.splice(0, arr.length - 50);
+  localStorage.setItem(key, JSON.stringify(arr));
+}
+
+function showHistory(asin) {
+  const arr = JSON.parse(localStorage.getItem(`ps_${asin}`) || '[]');
+  const box = document.getElementById('historyBox');
+  if (!arr.length) { box.textContent = 'No history yet for this ASIN.'; return; }
+  const lines = arr.slice(-15).reverse().map(h => {
+    const d = new Date(h.ts);
+    return `${d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})} ${d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}  →  ₹${Number(h.price).toLocaleString('en-IN')}`;
+  });
+  box.textContent = 'Recent prices (newest first):\n' + lines.join('\n');
+}
+
+function showErr(msg) {
+  document.getElementById('errMsg').textContent = msg;
+  document.getElementById('errBox').classList.add('show');
+  document.getElementById('loader').classList.remove('show');
+  document.getElementById('result').classList.remove('show');
+  document.getElementById('fetchBtn').disabled = false;
+}
+
+function showLoader() {
+  document.getElementById('loader').classList.add('show');
+  document.getElementById('errBox').classList.remove('show');
+  document.getElementById('result').classList.remove('show');
+}
+
+function showResult() {
+  document.getElementById('result').classList.add('show');
+  document.getElementById('loader').classList.remove('show');
+  document.getElementById('errBox').classList.remove('show');
+  document.getElementById('fetchBtn').disabled = false;
+}
+
+function setBadge(status) {
+  const el = document.getElementById('badge');
+  const map = { 'In Stock':['badge-in','In Stock'], 'Out of Stock':['badge-out','Out of Stock'], 'Low Stock':['badge-low','Low Stock'] };
+  const [cls, label] = map[status] || ['badge-unk', status || 'Unknown'];
+  el.className = `badge ${cls}`; el.textContent = label;
+}
+
+function renderProduct(d) {
+  currentUrl = d.url;
+  setBadge(d.availability);
+  document.getElementById('title').textContent = d.title || 'Title unavailable';
+  document.getElementById('price').textContent = d.price ? `₹${Number(d.price).toLocaleString('en-IN')}` : 'N/A';
+  document.getElementById('currency').textContent = d.price ? (d.currency || 'INR') : '—';
+  if (d.rating) {
+    const stars = '★'.repeat(Math.round(d.rating)) + '☆'.repeat(5 - Math.round(d.rating));
+    document.getElementById('rating').textContent = `${stars} ${d.rating}`;
+  } else {
+    document.getElementById('rating').textContent = 'N/A';
   }
+  const now = new Date();
+  document.getElementById('fetchedAt').textContent = now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('fetchedDate').textContent = now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  document.getElementById('asinDisplay').textContent = d.asin || currentAsin;
+  saveHistory(d.asin || currentAsin, d.price);
+  showHistory(d.asin || currentAsin);
+  showResult();
+}
 
-  function showHistory(asin) {
-    const key = `ps_${asin}`;
-    const arr = JSON.parse(localStorage.getItem(key) || '[]');
-    const box = document.getElementById('historyBox');
-    if (!arr.length) { box.textContent = 'No history yet for this ASIN.'; return; }
-    const lines = arr.slice(-15).reverse().map(h => {
-      const d = new Date(h.ts);
-      const ds = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
-      const ts = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
-      return `${ds} ${ts}  →  ₹${Number(h.price).toLocaleString('en-IN')}`;
-    });
-    box.innerHTML = `<b>Recent prices (newest first):</b>\n` + lines.join('\n');
-  }
+async function fetchOnce(asin, domain) {
+  const res = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  if (!text || !text.trim()) throw new Error('Empty response');
+  return JSON.parse(text);
+}
 
-  // ── UI helpers ───────────────────────────────────────────────
-  function showErr(msg) {
-    document.getElementById('errMsg').textContent = msg;
-    document.getElementById('errBox').classList.add('show');
-    document.getElementById('loader').classList.remove('show');
-    document.getElementById('result').classList.remove('show');
-    document.getElementById('fetchBtn').disabled = false;
-  }
-
-  function showLoader() {
-    document.getElementById('loader').classList.add('show');
-    document.getElementById('errBox').classList.remove('show');
-    document.getElementById('result').classList.remove('show');
-  }
-
-  function showResult() {
-    document.getElementById('result').classList.add('show');
-    document.getElementById('loader').classList.remove('show');
-    document.getElementById('errBox').classList.remove('show');
-    document.getElementById('fetchBtn').disabled = false;
-  }
-
-  function setBadge(status) {
-    const el = document.getElementById('badge');
-    const map = {
-      'In Stock':     ['badge-in',  'In Stock'],
-      'Out of Stock': ['badge-out', 'Out of Stock'],
-      'Low Stock':    ['badge-low', 'Low Stock'],
-    };
-    const [cls, label] = map[status] || ['badge-unk', status || 'Unknown'];
-    el.className = `badge ${cls}`;
-    el.textContent = label;
-  }
-
-  function renderProduct(d) {
-    currentUrl = d.url;
-
-    setBadge(d.availability);
-    document.getElementById('title').textContent =
-      d.title || 'Title could not be fetched';
-
-    // Price
-    document.getElementById('price').textContent =
-      d.price ? `₹${Number(d.price).toLocaleString('en-IN')}` : 'N/A';
-    document.getElementById('currency').textContent =
-      d.price ? d.currency || 'INR' : '—';
-
-    // Rating
-    if (d.rating) {
-      const stars = '★'.repeat(Math.round(d.rating)) + '☆'.repeat(5 - Math.round(d.rating));
-      document.getElementById('rating').textContent = `${stars} ${d.rating}`;
-    } else {
-      document.getElementById('rating').textContent = 'N/A';
-    }
-
-    // Fetched time
-    const now = new Date();
-    document.getElementById('fetchedAt').textContent =
-      now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-    document.getElementById('fetchedDate').textContent =
-      now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-
-    document.getElementById('asinDisplay').textContent = d.asin || currentAsin;
-
-    saveHistory(d.asin || currentAsin, d.price);
-    showHistory(d.asin || currentAsin);
-    showResult();
-  }
-
-  // ── Fetch with client-side retry ─────────────────────────────
-  async function fetchOnce(asin, domain) {
-    const res = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    if (!text || text.trim() === '') throw new Error('Empty response');
-    return JSON.parse(text);
-  }
-
-  async function run() {
-    // Cancel any pending retry
-    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-
-    const raw    = document.getElementById('asin').value.trim().toUpperCase();
-    const domain = document.getElementById('domain').value;
-    const match  = raw.match(/[A-Z0-9]{10}/);
-
-    if (!match) { showErr('Please enter a valid 10-character ASIN (e.g. B0FY66N9RX)'); return; }
-
-    currentAsin = match[0];
-    document.getElementById('asin').value = currentAsin;
-    document.getElementById('fetchBtn').disabled = true;
-    attemptCount = 0;
-    showLoader();
-    attempt(currentAsin, domain);
-  }
-
-  async function attempt(asin, domain) {
-    attemptCount++;
-    document.getElementById('attemptMsg').textContent =
-      attemptCount === 1 ? 'Connecting to Amazon…' : `Retry attempt ${attemptCount}…`;
-
-    try {
-      const data = await fetchOnce(asin, domain);
-
-      if (data.error) {
-        // If blocked, auto-retry up to 5 times with short delay
-        if (attemptCount < 5) {
-          const delay = 800 * attemptCount;
-          document.getElementById('attemptMsg').textContent =
-            `Blocked — retrying in ${(delay/1000).toFixed(1)}s… (${attemptCount}/5)`;
-          retryTimer = setTimeout(() => attempt(asin, domain), delay);
-          return;
-        }
-        showErr(data.error);
-        return;
-      }
-
-      renderProduct(data);
-
-    } catch (err) {
+async function attempt(asin, domain) {
+  attemptCount++;
+  document.getElementById('attemptMsg').textContent =
+    attemptCount === 1 ? 'Connecting to Amazon…' : `Retry ${attemptCount}/5…`;
+  try {
+    const data = await fetchOnce(asin, domain);
+    if (data.error) {
       if (attemptCount < 5) {
         const delay = 800 * attemptCount;
-        document.getElementById('attemptMsg').textContent =
-          `Error — retrying in ${(delay/1000).toFixed(1)}s… (${attemptCount}/5)`;
+        document.getElementById('attemptMsg').textContent = `Blocked — retrying in ${(delay/1000).toFixed(1)}s…`;
         retryTimer = setTimeout(() => attempt(asin, domain), delay);
         return;
       }
-      showErr('Failed after 5 attempts. Try again in a moment.');
+      showErr(data.error); return;
     }
+    renderProduct(data);
+  } catch(err) {
+    if (attemptCount < 5) {
+      const delay = 800 * attemptCount;
+      document.getElementById('attemptMsg').textContent = `Error — retrying in ${(delay/1000).toFixed(1)}s…`;
+      retryTimer = setTimeout(() => attempt(asin, domain), delay);
+      return;
+    }
+    showErr('Failed after 5 attempts. Try again.');
   }
+}
 
-  function go(asin) {
-    document.getElementById('asin').value = asin;
-    run();
-  }
+function run() {
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  const raw = document.getElementById('asin').value.trim().toUpperCase();
+  const domain = document.getElementById('domain').value;
+  const match = raw.match(/[A-Z0-9]{10}/);
+  if (!match) { showErr('Please enter a valid 10-character ASIN'); return; }
+  currentAsin = match[0];
+  document.getElementById('asin').value = currentAsin;
+  document.getElementById('fetchBtn').disabled = true;
+  attemptCount = 0;
+  showLoader();
+  attempt(currentAsin, domain);
+}
 
-  function openAmz() { if (currentUrl) window.open(currentUrl, '_blank'); }
-
-  function copyAsin() {
-    navigator.clipboard.writeText(currentAsin).then(() => {
-      const b = document.querySelector('.btn-sec');
-      const o = b.textContent;
-      b.textContent = '✓ Copied';
-      setTimeout(() => b.textContent = o, 1500);
-    });
-  }
-
-  document.getElementById('asin').addEventListener('keydown', e => {
-    if (e.key === 'Enter') run();
+function go(asin) { document.getElementById('asin').value = asin; run(); }
+function openAmz() { if (currentUrl) window.open(currentUrl, '_blank'); }
+function copyAsin() {
+  navigator.clipboard.writeText(currentAsin).then(() => {
+    const b = document.querySelectorAll('.btn-sec')[0];
+    const o = b.textContent; b.textContent = '✓ Copied';
+    setTimeout(() => b.textContent = o, 1500);
   });
+}
+document.getElementById('asin').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+
+/* ══ Bulk upload ════════════════════════════════════════════════════════════ */
+let uploadedAsins = [];
+let bulkResults   = [];
+let bulkRunning   = false;
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['xlsx','xls','csv'].includes(ext)) {
+    alert('Please upload a .xlsx, .xls, or .csv file');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data  = new Uint8Array(e.target.result);
+      const wb    = XLSX.read(data, { type: 'array' });
+      const ws    = wb.Sheets[wb.SheetNames[0]];
+      const rows  = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      // Find ASIN column (case-insensitive)
+      const sample = rows[0] || {};
+      const asinKey = Object.keys(sample).find(k => k.trim().toUpperCase() === 'ASIN');
+
+      if (!asinKey) {
+        alert('Could not find an "ASIN" column in your file.\nPlease make sure the column header is exactly "ASIN".');
+        return;
+      }
+
+      // Extract and validate ASINs
+      uploadedAsins = rows
+        .map(r => (String(r[asinKey] || '')).trim().toUpperCase())
+        .filter(a => /^[A-Z0-9]{10}$/.test(a));
+
+      // Show file info
+      const icon = ext === 'csv' ? '📄' : '📊';
+      document.getElementById('fileIcon').textContent = icon;
+      document.getElementById('fileName').textContent = file.name;
+      document.getElementById('fileMeta').textContent =
+        `${uploadedAsins.length} valid ASINs found · ${rows.length} total rows`;
+      document.getElementById('fileInfo').classList.add('show');
+      document.getElementById('dropZone').style.display = 'none';
+      document.getElementById('bulkBtn').disabled = uploadedAsins.length === 0;
+
+      if (uploadedAsins.length === 0) {
+        alert('No valid ASINs found. ASINs must be 10 characters (letters and numbers).');
+      }
+    } catch(err) {
+      alert('Could not read file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function clearFile() {
+  uploadedAsins = [];
+  bulkResults   = [];
+  document.getElementById('fileInput').value = '';
+  document.getElementById('fileInfo').classList.remove('show');
+  document.getElementById('dropZone').style.display = '';
+  document.getElementById('bulkBtn').disabled = true;
+  document.getElementById('progressWrap').classList.remove('show');
+  document.getElementById('bulkResults').classList.remove('show');
+}
+
+async function fetchWithRetry(asin, domain, maxTries = 5) {
+  for (let i = 1; i <= maxTries; i++) {
+    try {
+      if (i > 1) await sleep(700 * i);
+      const res  = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (!text || !text.trim()) continue;
+      const data = JSON.parse(text);
+      if (!data.error) return data;
+    } catch(e) { /* retry */ }
+  }
+  return { asin, error: 'Failed after retries', title: null, price: null, rating: null, availability: 'Error' };
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function startBulk() {
+  if (bulkRunning || uploadedAsins.length === 0) return;
+  bulkRunning = true;
+  bulkResults = [];
+
+  const domain  = document.getElementById('domain').value;
+  const total   = uploadedAsins.length;
+
+  document.getElementById('bulkBtn').disabled = true;
+  document.getElementById('progressWrap').classList.add('show');
+  document.getElementById('bulkResults').classList.remove('show');
+
+  for (let i = 0; i < total; i++) {
+    const asin = uploadedAsins[i];
+    const pct  = Math.round((i / total) * 100);
+
+    document.getElementById('progressBar').style.width  = pct + '%';
+    document.getElementById('progressCount').textContent = `${i} / ${total}`;
+    document.getElementById('progressCurrent').textContent = `Fetching ${asin}…`;
+
+    const data = await fetchWithRetry(asin, domain);
+    bulkResults.push(data);
+
+    // Small delay between requests to avoid hammering
+    if (i < total - 1) await sleep(400);
+  }
+
+  // Done
+  document.getElementById('progressBar').style.width   = '100%';
+  document.getElementById('progressCount').textContent = `${total} / ${total}`;
+  document.getElementById('progressCurrent').textContent = '✓ All done!';
+
+  renderBulkTable();
+  bulkRunning = false;
+  document.getElementById('bulkBtn').disabled = false;
+}
+
+function availClass(status) {
+  if (status === 'In Stock')     return 'tbl-in';
+  if (status === 'Out of Stock') return 'tbl-out';
+  if (status === 'Low Stock')    return 'tbl-low';
+  if (status === 'Error')        return 'tbl-err';
+  return 'tbl-unk';
+}
+
+function renderBulkTable() {
+  const total   = bulkResults.length;
+  const display = bulkResults.slice(0, 10);
+  const success = bulkResults.filter(r => !r.error).length;
+  const failed  = bulkResults.filter(r => r.error).length;
+
+  document.getElementById('resultsTitle').textContent = `Results — ${total} ASINs`;
+  document.getElementById('resultsMeta').textContent  =
+    `✅ ${success} fetched · ❌ ${failed} failed`;
+
+  const moreNote = document.getElementById('moreNote');
+  if (total > 10) moreNote.classList.add('show'); else moreNote.classList.remove('show');
+
+  const tbody = document.getElementById('bulkTableBody');
+  tbody.innerHTML = display.map((r, i) => `
+    <tr>
+      <td style="color:var(--text3)">${i + 1}</td>
+      <td class="asin-cell">${r.asin || '—'}</td>
+      <td class="title-cell" title="${r.title || ''}">${r.title ? r.title.slice(0, 55) + (r.title.length > 55 ? '…' : '') : (r.error ? '⚠ ' + r.error : '—')}</td>
+      <td class="price-cell">${r.price ? `₹${Number(r.price).toLocaleString('en-IN')}` : '—'}</td>
+      <td class="rating-cell">${r.rating ? `★ ${r.rating}` : '—'}</td>
+      <td><span class="tbl-badge ${availClass(r.availability)}">${r.availability || 'Unknown'}</span></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('bulkResults').classList.add('show');
+}
+
+/* ── Download CSV ──────────────────────────────────────────────────────── */
+function downloadCSV() {
+  const now  = new Date().toISOString().slice(0, 10);
+  const headers = ['#','ASIN','Title','Price (INR)','Rating','Availability','URL','Fetched At'];
+  const rows = bulkResults.map((r, i) => [
+    i + 1,
+    r.asin || '',
+    `"${(r.title || r.error || '').replace(/"/g, '""')}"`,
+    r.price || '',
+    r.rating || '',
+    r.availability || '',
+    r.url || `https://www.amazon.in/dp/${r.asin}`,
+    new Date().toLocaleString('en-IN'),
+  ]);
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `price-scout-report-${now}.csv`;
+  a.click();
+}
+
+/* ── Download Excel ────────────────────────────────────────────────────── */
+function downloadXLSX() {
+  const now = new Date().toISOString().slice(0, 10);
+
+  const wsData = [
+    ['#', 'ASIN', 'Title', 'Price (INR)', 'Rating', 'Availability', 'Amazon URL', 'Fetched At'],
+    ...bulkResults.map((r, i) => [
+      i + 1,
+      r.asin || '',
+      r.title || r.error || '',
+      r.price || '',
+      r.rating || '',
+      r.availability || '',
+      r.url || `https://www.amazon.in/dp/${r.asin}`,
+      new Date().toLocaleString('en-IN'),
+    ])
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 4  },  // #
+    { wch: 14 },  // ASIN
+    { wch: 55 },  // Title
+    { wch: 12 },  // Price
+    { wch: 8  },  // Rating
+    { wch: 15 },  // Availability
+    { wch: 42 },  // URL
+    { wch: 20 },  // Fetched At
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Price Scout Report');
+
+  // Summary sheet
+  const success = bulkResults.filter(r => !r.error && r.price).length;
+  const failed  = bulkResults.filter(r => r.error || !r.title).length;
+  const outOfStock = bulkResults.filter(r => r.availability === 'Out of Stock').length;
+  const avgPrice = bulkResults.filter(r => r.price).reduce((s, r) => s + r.price, 0) /
+                   (bulkResults.filter(r => r.price).length || 1);
+
+  const summaryData = [
+    ['Price Scout Report Summary'],
+    ['Generated', new Date().toLocaleString('en-IN')],
+    ['Domain', document.getElementById('domain').value],
+    [''],
+    ['Total ASINs', bulkResults.length],
+    ['Successfully Fetched', success],
+    ['Failed / Error', failed],
+    ['Out of Stock', outOfStock],
+    ['Average Price (INR)', Math.round(avgPrice)],
+  ];
+  const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
+  ws2['!cols'] = [{ wch: 25 }, { wch: 30 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+
+  XLSX.writeFile(wb, `price-scout-report-${now}.xlsx`);
+}
 </script>
 </body>
 </html>
