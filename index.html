@@ -166,7 +166,10 @@
     .tbl-out { background: #2e0f0f; color: var(--red);    }
     .tbl-low { background: #2e2310; color: var(--yellow); }
     .tbl-unk { background: var(--surface3); color: var(--text3); }
-    .tbl-err { background: #2e1a0f; color: #e8782a; }
+    .tbl-err      { background: #2e1a0f; color: #e8782a; }
+    .tbl-retrying { background: #1a1a2e; color: #7c8bff; animation: pulse 1.2s ease-in-out infinite; }
+    .tbl-pending  { background: var(--surface3); color: var(--text3); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
     .table-wrap { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; overflow-x: auto; }
 
     footer { padding: 1rem 2rem; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text3); }
@@ -565,34 +568,50 @@ function clearFile() {
   document.getElementById('bulkResults').classList.remove('show');
 }
 
-async function fetchWithRetry(asin, domain, maxTries = 4) {
-  for (let i = 1; i <= maxTries; i++) {
-    try {
-      if (i > 1) await sleep(600 * i);
-      const res  = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
-      if (!res.ok) continue;
-      const text = await res.text();
-      if (!text || !text.trim()) continue;
-      const data = JSON.parse(text);
-      if (!data.error) return data;
-    } catch(e) { /* retry */ }
-  }
-  return { asin, error: 'Failed', title: null, price: null, rating: null, availability: 'Error' };
-}
-
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function isFailed(r) {
-  // A result is "failed" if it has an error OR no title AND no price
   return !!(r.error || (!r.title && !r.price));
 }
 
-function setProgress(label, current, total, currentMsg) {
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-  document.getElementById('progressLabel').textContent  = label;
-  document.getElementById('progressBar').style.width    = pct + '%';
-  document.getElementById('progressCount').textContent  = `${current} / ${total}`;
-  document.getElementById('progressCurrent').textContent = currentMsg;
+async function fetchOnceRaw(asin, domain) {
+  const res  = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  if (!text || !text.trim()) throw new Error('Empty response');
+  const data = JSON.parse(text);
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+async function fetchUntilSuccess(asin, domain, idx, maxAttempts = 20) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      if (attempt > 1) await sleep(300 + Math.random() * 700);
+      const data = await fetchOnceRaw(asin, domain);
+      bulkResults[idx] = data;
+      return true;
+    } catch(e) {
+      bulkResults[idx] = {
+        asin, error: `Retrying… (attempt ${attempt})`,
+        title: null, price: null, rating: null, availability: 'Retrying'
+      };
+    }
+  }
+  bulkResults[idx] = { asin, error: 'Could not fetch', title: null, price: null, rating: null, availability: 'Error' };
+  return false;
+}
+
+function updateProgressUI(done, total, retryingCount) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progressLabel').textContent   = retryingCount > 0
+    ? `Fetching — ${retryingCount} retrying in parallel…`
+    : 'Fetching all ASINs…';
+  document.getElementById('progressBar').style.width     = pct + '%';
+  document.getElementById('progressCount').textContent   = `${done} / ${total}`;
+  document.getElementById('progressCurrent').textContent = retryingCount > 0
+    ? `✅ ${done} done · 🔄 ${retryingCount} retrying…`
+    : `Fetched ${done} of ${total}…`;
 }
 
 async function startBulk() {
@@ -607,58 +626,47 @@ async function startBulk() {
   document.getElementById('progressWrap').classList.add('show');
   document.getElementById('bulkResults').classList.remove('show');
 
-  // ── PASS 1: Fetch all ASINs ─────────────────────────────────
-  setProgress('Pass 1 of 2 — Fetching all ASINs…', 0, total, 'Starting…');
-
+  // Pre-fill placeholders so indices are stable
   for (let i = 0; i < total; i++) {
-    const asin = uploadedAsins[i];
-    setProgress('Pass 1 of 2 — Fetching all ASINs…', i, total, `Fetching ${asin}… (${i+1}/${total})`);
-    const data = await fetchWithRetry(asin, domain);
-    bulkResults.push(data);
-    if (i < total - 1) await sleep(350);
+    bulkResults.push({
+      asin: uploadedAsins[i], error: 'Pending',
+      title: null, price: null, rating: null, availability: 'Pending'
+    });
   }
 
-  // ── Check failures after pass 1 ─────────────────────────────
-  let failed = bulkResults.filter(isFailed);
+  updateProgressUI(0, total, 0);
 
-  if (failed.length > 0) {
-    // Show intermediate table while retrying
-    renderBulkTable(false);
-
-    // Small pause before retrying
-    setProgress(`Pass 2 of 2 — Retrying ${failed.length} failed ASINs…`, 0, failed.length, 'Waiting 3s before retry…');
-    await sleep(3000); // let Amazon calm down
-
-    for (let i = 0; i < failed.length; i++) {
-      const asin = failed[i].asin;
-      setProgress(
-        `Pass 2 of 2 — Retrying ${failed.length} failed ASINs…`,
-        i, failed.length,
-        `Retrying ${asin}… (${i+1}/${failed.length})`
-      );
-
-      // Longer retry with more attempts for the second pass
-      const retried = await fetchWithRetry(asin, domain, 6);
-
-      // Replace the failed result in bulkResults
-      const idx = bulkResults.findIndex(r => r.asin === asin);
-      if (idx !== -1) {
-        bulkResults[idx] = retried;
-      }
-
-      if (i < failed.length - 1) await sleep(500);
-    }
-  }
-
-  // ── Final check — any still failing? ────────────────────────
-  const stillFailed = bulkResults.filter(isFailed);
-  const successCount = bulkResults.length - stillFailed.length;
-
-  setProgress('✓ Done!', bulkResults.length, bulkResults.length,
-    stillFailed.length > 0
-      ? `✅ ${successCount} fetched · ⚠ ${stillFailed.length} could not be fetched (Amazon blocked)`
-      : `✅ All ${successCount} ASINs fetched successfully!`
+  // Launch ALL ASINs in parallel — each keeps retrying until success
+  // Stagger start 150ms apart to avoid all hitting server simultaneously
+  const promises = uploadedAsins.map((asin, idx) =>
+    sleep(idx * 150).then(() => fetchUntilSuccess(asin, domain, idx))
   );
+
+  // Refresh UI every 600ms while running
+  let allDone = false;
+  const uiInterval = setInterval(() => {
+    if (allDone) { clearInterval(uiInterval); return; }
+    const done      = bulkResults.filter(r => r.availability !== 'Pending' && r.availability !== 'Retrying' && !isFailed(r)).length;
+    const retrying  = bulkResults.filter(r => r.availability === 'Retrying' || r.availability === 'Pending').length;
+    updateProgressUI(done, total, retrying);
+    renderBulkTable(false);
+  }, 600);
+
+  // Wait for every single ASIN to resolve
+  await Promise.all(promises);
+  allDone = true;
+  clearInterval(uiInterval);
+
+  // Final counts
+  const successCount = bulkResults.filter(r => !isFailed(r)).length;
+  const failedCount  = bulkResults.filter(isFailed).length;
+
+  document.getElementById('progressLabel').textContent   = '✓ Complete';
+  document.getElementById('progressBar').style.width     = '100%';
+  document.getElementById('progressCount').textContent   = `${total} / ${total}`;
+  document.getElementById('progressCurrent').textContent = failedCount > 0
+    ? `✅ ${successCount} fetched · ❌ ${failedCount} could not be fetched after 20 attempts`
+    : `✅ All ${successCount} ASINs fetched successfully!`;
 
   renderBulkTable(true);
   bulkRunning = false;
@@ -670,6 +678,8 @@ function availClass(status) {
   if (status === 'Out of Stock') return 'tbl-out';
   if (status === 'Low Stock')    return 'tbl-low';
   if (status === 'Error')        return 'tbl-err';
+  if (status === 'Retrying')     return 'tbl-retrying';
+  if (status === 'Pending')      return 'tbl-pending';
   return 'tbl-unk';
 }
 
@@ -681,8 +691,9 @@ function renderBulkTable(isFinal = true) {
 
   document.getElementById('resultsTitle').textContent = `Results — ${total} ASINs`;
 
+  const retrying = bulkResults.filter(r => r.availability === 'Retrying' || r.availability === 'Pending').length;
   let meta = `✅ ${success} fetched`;
-  if (failed.length > 0 && !isFinal) meta += ` · ⏳ ${failed.length} retrying…`;
+  if (retrying > 0)                  meta += ` · 🔄 ${retrying} retrying…`;
   else if (failed.length > 0)        meta += ` · ❌ ${failed.length} failed`;
   document.getElementById('resultsMeta').textContent = meta;
 
