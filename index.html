@@ -166,7 +166,6 @@
     .tbl-out { background: #2e0f0f; color: var(--red);    }
     .tbl-low { background: #2e2310; color: var(--yellow); }
     .tbl-unk { background: var(--surface3); color: var(--text3); }
-    .tbl-err { background: #2e1a0f; color: #e8782a; }
     .tbl-err      { background: #2e1a0f; color: #e8782a; }
     .tbl-retrying { background: #1a1a2e; color: #7c8bff; animation: pulse 1.2s ease-in-out infinite; }
     .tbl-pending  { background: var(--surface3); color: var(--text3); }
@@ -174,38 +173,538 @@
     .table-wrap { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; overflow-x: auto; }
 
     footer { padding: 1rem 2rem; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text3); }
-@@ -565,34 +568,50 @@
-  document.getElementById('bulkResults').classList.remove('show');
+
+    @media (max-width: 600px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      main { padding: 1.5rem 1rem 3rem; }
+      header { padding: 1rem; }
+    }
+
+    /* ── File format guide ── */
+    .format-guide {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); margin-bottom: 1.25rem; overflow: hidden;
+    }
+    .format-guide-title {
+      padding: 0.75rem 1.1rem; font-size: 13px; font-weight: 600;
+      color: var(--text2); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface2);
+    }
+    .format-guide-body {
+      padding: 1.1rem; display: grid;
+      grid-template-columns: 1fr 1fr; gap: 1.25rem;
+    }
+    @media (max-width: 640px) { .format-guide-body { grid-template-columns: 1fr; } }
+    .format-rules { display: flex; flex-direction: column; gap: 9px; }
+    .format-rule {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 12px; color: var(--text2); line-height: 1.5;
+    }
+    .rule-icon {
+      flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+      display: grid; place-items: center; font-size: 10px; font-weight: 700; margin-top: 1px;
+    }
+    .rule-ok  { background: #0f2e1a; color: var(--green); border: 1px solid #1a4d2a; }
+    .rule-no  { background: #2e0f0f; color: var(--red);   border: 1px solid #4d1a1a; }
+    .format-rule code {
+      font-family: var(--mono); font-size: 11px; background: var(--surface3);
+      padding: 1px 6px; border-radius: 4px; color: var(--accent);
+      border: 1px solid var(--border2);
+    }
+    /* Spreadsheet preview */
+    .format-preview { font-size: 11px; }
+    .preview-label { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+    .preview-sheet {
+      border: 1px solid var(--border2); border-radius: 6px; overflow: hidden;
+      background: var(--surface2);
+    }
+    .preview-wrong { opacity: 0.8; }
+    .sheet-header, .sheet-row {
+      display: flex; border-bottom: 1px solid var(--border);
+    }
+    .sheet-row:last-child { border-bottom: none; }
+    .sheet-more { opacity: 0.4; }
+    .sheet-cell {
+      padding: 5px 8px; font-family: var(--mono);
+      font-size: 10px; border-right: 1px solid var(--border);
+    }
+    .sheet-cell:last-child { border-right: none; }
+    .sheet-col-a { min-width: 110px; }
+    .sheet-col-b { flex: 1; }
+    .header-cell  { font-weight: 700; background: var(--surface3); color: var(--text2); font-family: var(--sans); font-size: 10px; }
+    .asin-cell-pre { color: var(--accent); }
+    .other-cell   { color: var(--text3); font-family: var(--sans); }
+    .wrong-header { color: var(--red) !important; }
+    .wrong-cell   { color: var(--red); opacity: 0.7; }
+
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🔍</div>
+  <div>
+    <div class="logo-text">Price Scout</div>
+    <div class="logo-sub">Amazon Product Lookup</div>
+  </div>
+  <div class="header-right">
+    <select class="domain-sel" id="domain">
+      <option value="amazon.in">🇮🇳 amazon.in</option>
+      <option value="amazon.com">🇺🇸 amazon.com</option>
+      <option value="amazon.co.uk">🇬🇧 amazon.co.uk</option>
+      <option value="amazon.de">🇩🇪 amazon.de</option>
+    </select>
+  </div>
+</header>
+
+<main>
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('single')">Single ASIN Lookup</button>
+    <button class="tab" onclick="switchTab('bulk')">Bulk Upload (Excel / CSV)</button>
+  </div>
+
+  <!-- ══ SINGLE PANEL ══════════════════════════════════════════ -->
+  <div class="panel active" id="panel-single">
+    <div class="hero">
+      <h2>Amazon <span>Price Scout</span></h2>
+      <p>Enter an ASIN to get live title, price & rating</p>
+    </div>
+
+    <div class="search-box">
+      <div class="search-row">
+        <input class="search-input" id="asin" type="text" placeholder="e.g. B0FY66N9RX" maxlength="10" autocomplete="off" spellcheck="false"/>
+        <button class="fetch-btn" id="fetchBtn" onclick="run()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          Fetch
+        </button>
+      </div>
+      <div class="chips">
+        <span class="chip-label">Try:</span>
+        <span class="chip" onclick="go('B0FY66N9RX')">B0FY66N9RX</span>
+        <span class="chip" onclick="go('B0DGXWJLX4')">B0DGXWJLX4</span>
+        <span class="chip" onclick="go('B09G9FPHY6')">B09G9FPHY6</span>
+        <span class="chip" onclick="go('B08N5WRWNW')">B08N5WRWNW</span>
+      </div>
+    </div>
+
+    <div class="error-box" id="errBox"><span>⚠️</span><span id="errMsg"></span></div>
+
+    <div class="loader" id="loader">
+      <div class="ring"></div>
+      <div class="loader-msg">Fetching from Amazon…</div>
+      <div class="loader-attempt" id="attemptMsg">Connecting…</div>
+    </div>
+
+    <div class="result" id="result">
+      <div class="card">
+        <div id="badge" class="badge badge-unk">Unknown</div>
+        <div class="product-title" id="title">—</div>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-label">Current Price</div>
+            <div class="stat-value price-val" id="price">—</div>
+            <div class="stat-sub" id="currency">INR</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Rating</div>
+            <div class="stat-value rating-val" id="rating">—</div>
+            <div class="stat-sub">out of 5</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Last Fetched</div>
+            <div class="stat-value" style="font-size:13px;color:var(--text2);" id="fetchedAt">—</div>
+            <div class="stat-sub" id="fetchedDate">—</div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <div class="asin-mono">ASIN: <span id="asinDisplay">—</span></div>
+          <div class="footer-btns">
+            <button class="btn-sec" onclick="copyAsin()">Copy ASIN</button>
+            <button class="btn-sec" onclick="run()">↻ Refresh</button>
+            <button class="btn-amz" onclick="openAmz()">View on Amazon ↗</button>
+          </div>
+        </div>
+      </div>
+      <div class="history">
+        <div class="section-title">Price History</div>
+        <div class="history-box" id="historyBox">No history yet for this ASIN.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ BULK PANEL ════════════════════════════════════════════ -->
+  <div class="panel" id="panel-bulk">
+    <div class="hero">
+      <h2>Bulk <span>ASIN Lookup</span></h2>
+      <p>Upload an Excel or CSV file — we'll fetch all products in parallel and generate a full report</p>
+    </div>
+
+    <!-- File format guide -->
+    <div class="format-guide">
+      <div class="format-guide-title">
+        <span>📋</span> How to format your file
+      </div>
+      <div class="format-guide-body">
+        <div class="format-rules">
+          <div class="format-rule">
+            <span class="rule-icon rule-ok">✓</span>
+            <span>Column header must be exactly <code>ASIN</code> (uppercase)</span>
+          </div>
+          <div class="format-rule">
+            <span class="rule-icon rule-ok">✓</span>
+            <span>All ASINs must be in a <strong>single column</strong> — one per row</span>
+          </div>
+          <div class="format-rule">
+            <span class="rule-icon rule-ok">✓</span>
+            <span>Each ASIN is exactly <strong>10 characters</strong> (letters and numbers)</span>
+          </div>
+          <div class="format-rule">
+            <span class="rule-icon rule-ok">✓</span>
+            <span>Accepts <strong>.xlsx</strong>, <strong>.xls</strong>, and <strong>.csv</strong> files</span>
+          </div>
+          <div class="format-rule">
+            <span class="rule-icon rule-no">✗</span>
+            <span>Do NOT split ASINs across multiple columns</span>
+          </div>
+        </div>
+
+        <!-- Visual preview of correct format -->
+        <div class="format-preview">
+          <div class="preview-label">✅ Correct format</div>
+          <div class="preview-sheet">
+            <div class="sheet-header">
+              <div class="sheet-cell sheet-col-a header-cell">ASIN</div>
+              <div class="sheet-cell sheet-col-b other-cell">Other columns OK</div>
+            </div>
+            <div class="sheet-row">
+              <div class="sheet-cell sheet-col-a asin-cell-pre">B0FY66N9RX</div>
+              <div class="sheet-cell sheet-col-b other-cell">Product name…</div>
+            </div>
+            <div class="sheet-row">
+              <div class="sheet-cell sheet-col-a asin-cell-pre">B0DGXWJLX4</div>
+              <div class="sheet-cell sheet-col-b other-cell">Category…</div>
+            </div>
+            <div class="sheet-row">
+              <div class="sheet-cell sheet-col-a asin-cell-pre">B09G9FPHY6</div>
+              <div class="sheet-cell sheet-col-b other-cell">Brand…</div>
+            </div>
+            <div class="sheet-row sheet-more">
+              <div class="sheet-cell sheet-col-a" style="color:var(--text3)">…</div>
+              <div class="sheet-cell sheet-col-b" style="color:var(--text3)">…</div>
+            </div>
+          </div>
+
+          <div class="preview-label" style="margin-top:12px; color:var(--red)">❌ Wrong format</div>
+          <div class="preview-sheet preview-wrong">
+            <div class="sheet-header">
+              <div class="sheet-cell sheet-col-a header-cell wrong-header">asin</div>
+              <div class="sheet-cell sheet-col-b header-cell wrong-header">ASIN 2</div>
+              <div class="sheet-cell sheet-col-b header-cell wrong-header">ASIN 3</div>
+            </div>
+            <div class="sheet-row">
+              <div class="sheet-cell sheet-col-a wrong-cell">B0FY66N9RX</div>
+              <div class="sheet-cell sheet-col-b wrong-cell">B0DGXWJLX4</div>
+              <div class="sheet-cell sheet-col-b wrong-cell">B09G9FPHY6</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="handleDrop(event)">
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])"/>
+      <div class="upload-icon">📂</div>
+      <div class="upload-title">Drop your file here or <span>browse</span></div>
+      <div class="upload-sub">Supports .xlsx, .xls, .csv &nbsp;·&nbsp; Column must be named <strong>ASIN</strong></div>
+    </div>
+
+    <!-- File info -->
+    <div class="file-info" id="fileInfo">
+      <div class="file-icon" id="fileIcon">📊</div>
+      <div class="file-details">
+        <div class="file-name" id="fileName">—</div>
+        <div class="file-meta" id="fileMeta">—</div>
+      </div>
+      <button class="file-clear" onclick="clearFile()">✕ Clear</button>
+    </div>
+
+    <button class="bulk-btn" id="bulkBtn" onclick="startBulk()" disabled>
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      Fetch All ASINs
+    </button>
+
+    <!-- Progress -->
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-header">
+        <div class="progress-label" id="progressLabel">Fetching products…</div>
+        <div class="progress-count" id="progressCount">0 / 0</div>
+      </div>
+      <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-current" id="progressCurrent">Starting…</div>
+    </div>
+
+    <!-- Results table -->
+    <div class="bulk-results" id="bulkResults">
+      <div class="results-header">
+        <div>
+          <div class="results-title" id="resultsTitle">Results</div>
+          <div class="results-meta" id="resultsMeta"></div>
+        </div>
+        <div class="download-btns">
+          <button class="dl-btn dl-csv" onclick="downloadCSV()">⬇ Download CSV</button>
+          <button class="dl-btn dl-xlsx" onclick="downloadXLSX()">⬇ Download Excel</button>
+        </div>
+      </div>
+      <div class="more-note" id="moreNote">
+        📋 Showing first 10 results on screen. Download the report to see all data.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ASIN</th>
+              <th>Title</th>
+              <th>Price</th>
+              <th>Rating</th>
+              <th>Availability</th>
+            </tr>
+          </thead>
+          <tbody id="bulkTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>Price Scout · Single &amp; Bulk Amazon lookup · Deployed on Vercel</footer>
+
+<script>
+const API = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+
+/* ══ Tab switching ══════════════════════════════════════════════════════════ */
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (tab === 'single' ? 0 : 1) === i));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`panel-${tab}`).classList.add('active');
 }
 
-async function fetchWithRetry(asin, domain, maxTries = 4) {
-  for (let i = 1; i <= maxTries; i++) {
-    try {
-      if (i > 1) await sleep(600 * i);
-      const res  = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
-      if (!res.ok) continue;
-      const text = await res.text();
-      if (!text || !text.trim()) continue;
-      const data = JSON.parse(text);
-      if (!data.error) return data;
-    } catch(e) { /* retry */ }
+/* ══ Single lookup ══════════════════════════════════════════════════════════ */
+let currentAsin = '', currentUrl = '', retryTimer = null, attemptCount = 0;
+
+function saveHistory(asin, price) {
+  if (!price) return;
+  const key = `ps_${asin}`;
+  const arr = JSON.parse(localStorage.getItem(key) || '[]');
+  arr.push({ price, ts: Date.now() });
+  if (arr.length > 50) arr.splice(0, arr.length - 50);
+  localStorage.setItem(key, JSON.stringify(arr));
+}
+
+function showHistory(asin) {
+  const arr = JSON.parse(localStorage.getItem(`ps_${asin}`) || '[]');
+  const box = document.getElementById('historyBox');
+  if (!arr.length) { box.textContent = 'No history yet for this ASIN.'; return; }
+  const lines = arr.slice(-15).reverse().map(h => {
+    const d = new Date(h.ts);
+    return `${d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})} ${d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}  →  ₹${Number(h.price).toLocaleString('en-IN')}`;
+  });
+  box.textContent = 'Recent prices (newest first):\n' + lines.join('\n');
+}
+
+function showErr(msg) {
+  document.getElementById('errMsg').textContent = msg;
+  document.getElementById('errBox').classList.add('show');
+  document.getElementById('loader').classList.remove('show');
+  document.getElementById('result').classList.remove('show');
+  document.getElementById('fetchBtn').disabled = false;
+}
+
+function showLoader() {
+  document.getElementById('loader').classList.add('show');
+  document.getElementById('errBox').classList.remove('show');
+  document.getElementById('result').classList.remove('show');
+}
+
+function showResult() {
+  document.getElementById('result').classList.add('show');
+  document.getElementById('loader').classList.remove('show');
+  document.getElementById('errBox').classList.remove('show');
+  document.getElementById('fetchBtn').disabled = false;
+}
+
+function setBadge(status) {
+  const el = document.getElementById('badge');
+  const map = { 'In Stock':['badge-in','In Stock'], 'Out of Stock':['badge-out','Out of Stock'], 'Low Stock':['badge-low','Low Stock'] };
+  const [cls, label] = map[status] || ['badge-unk', status || 'Unknown'];
+  el.className = `badge ${cls}`; el.textContent = label;
+}
+
+function renderProduct(d) {
+  currentUrl = d.url;
+  setBadge(d.availability);
+  document.getElementById('title').textContent = d.title || 'Title unavailable';
+  document.getElementById('price').textContent = d.price ? `₹${Number(d.price).toLocaleString('en-IN')}` : 'N/A';
+  document.getElementById('currency').textContent = d.price ? (d.currency || 'INR') : '—';
+  if (d.rating) {
+    const stars = '★'.repeat(Math.round(d.rating)) + '☆'.repeat(5 - Math.round(d.rating));
+    document.getElementById('rating').textContent = `${stars} ${d.rating}`;
+  } else {
+    document.getElementById('rating').textContent = 'N/A';
   }
-  return { asin, error: 'Failed', title: null, price: null, rating: null, availability: 'Error' };
+  const now = new Date();
+  document.getElementById('fetchedAt').textContent = now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('fetchedDate').textContent = now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  document.getElementById('asinDisplay').textContent = d.asin || currentAsin;
+  saveHistory(d.asin || currentAsin, d.price);
+  showHistory(d.asin || currentAsin);
+  showResult();
+}
+
+async function fetchOnce(asin, domain) {
+  const res = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  if (!text || !text.trim()) throw new Error('Empty response');
+  return JSON.parse(text);
+}
+
+async function attempt(asin, domain) {
+  attemptCount++;
+  document.getElementById('attemptMsg').textContent =
+    attemptCount === 1 ? 'Connecting to Amazon…' : `Retry ${attemptCount}/5…`;
+  try {
+    const data = await fetchOnce(asin, domain);
+    if (data.error) {
+      if (attemptCount < 5) {
+        const delay = 800 * attemptCount;
+        document.getElementById('attemptMsg').textContent = `Blocked — retrying in ${(delay/1000).toFixed(1)}s…`;
+        retryTimer = setTimeout(() => attempt(asin, domain), delay);
+        return;
+      }
+      showErr(data.error); return;
+    }
+    renderProduct(data);
+  } catch(err) {
+    if (attemptCount < 5) {
+      const delay = 800 * attemptCount;
+      document.getElementById('attemptMsg').textContent = `Error — retrying in ${(delay/1000).toFixed(1)}s…`;
+      retryTimer = setTimeout(() => attempt(asin, domain), delay);
+      return;
+    }
+    showErr('Failed after 5 attempts. Try again.');
+  }
+}
+
+function run() {
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  const raw = document.getElementById('asin').value.trim().toUpperCase();
+  const domain = document.getElementById('domain').value;
+  const match = raw.match(/[A-Z0-9]{10}/);
+  if (!match) { showErr('Please enter a valid 10-character ASIN'); return; }
+  currentAsin = match[0];
+  document.getElementById('asin').value = currentAsin;
+  document.getElementById('fetchBtn').disabled = true;
+  attemptCount = 0;
+  showLoader();
+  attempt(currentAsin, domain);
+}
+
+function go(asin) { document.getElementById('asin').value = asin; run(); }
+function openAmz() { if (currentUrl) window.open(currentUrl, '_blank'); }
+function copyAsin() {
+  navigator.clipboard.writeText(currentAsin).then(() => {
+    const b = document.querySelectorAll('.btn-sec')[0];
+    const o = b.textContent; b.textContent = '✓ Copied';
+    setTimeout(() => b.textContent = o, 1500);
+  });
+}
+document.getElementById('asin').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+
+/* ══ Bulk upload ════════════════════════════════════════════════════════════ */
+let uploadedAsins = [];
+let bulkResults   = [];
+let bulkRunning   = false;
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['xlsx','xls','csv'].includes(ext)) {
+    alert('Please upload a .xlsx, .xls, or .csv file');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data  = new Uint8Array(e.target.result);
+      const wb    = XLSX.read(data, { type: 'array' });
+      const ws    = wb.Sheets[wb.SheetNames[0]];
+      const rows  = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      // Find ASIN column (case-insensitive)
+      const sample = rows[0] || {};
+      const asinKey = Object.keys(sample).find(k => k.trim().toUpperCase() === 'ASIN');
+
+      if (!asinKey) {
+        alert('Could not find an "ASIN" column in your file.\nPlease make sure the column header is exactly "ASIN".');
+        return;
+      }
+
+      // Extract and validate ASINs
+      uploadedAsins = rows
+        .map(r => (String(r[asinKey] || '')).trim().toUpperCase())
+        .filter(a => /^[A-Z0-9]{10}$/.test(a));
+
+      // Show file info
+      const icon = ext === 'csv' ? '📄' : '📊';
+      document.getElementById('fileIcon').textContent = icon;
+      document.getElementById('fileName').textContent = file.name;
+      document.getElementById('fileMeta').textContent =
+        `${uploadedAsins.length} valid ASINs found · ${rows.length} total rows`;
+      document.getElementById('fileInfo').classList.add('show');
+      document.getElementById('dropZone').style.display = 'none';
+      document.getElementById('bulkBtn').disabled = uploadedAsins.length === 0;
+
+      if (uploadedAsins.length === 0) {
+        alert('No valid ASINs found. ASINs must be 10 characters (letters and numbers).');
+      }
+    } catch(err) {
+      alert('Could not read file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function clearFile() {
+  uploadedAsins = [];
+  bulkResults   = [];
+  document.getElementById('fileInput').value = '';
+  document.getElementById('fileInfo').classList.remove('show');
+  document.getElementById('dropZone').style.display = '';
+  document.getElementById('bulkBtn').disabled = true;
+  document.getElementById('progressWrap').classList.remove('show');
+  document.getElementById('bulkResults').classList.remove('show');
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function isFailed(r) {
-  // A result is "failed" if it has an error OR no title AND no price
   return !!(r.error || (!r.title && !r.price));
 }
 
-function setProgress(label, current, total, currentMsg) {
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-  document.getElementById('progressLabel').textContent  = label;
-  document.getElementById('progressBar').style.width    = pct + '%';
-  document.getElementById('progressCount').textContent  = `${current} / ${total}`;
-  document.getElementById('progressCurrent').textContent = currentMsg;
 async function fetchOnceRaw(asin, domain) {
   const res  = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -216,6 +715,7 @@ async function fetchOnceRaw(asin, domain) {
   return data;
 }
 
+// Each ASIN keeps retrying independently until success or maxAttempts
 async function fetchUntilSuccess(asin, domain, idx, maxAttempts = 20) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -230,7 +730,10 @@ async function fetchUntilSuccess(asin, domain, idx, maxAttempts = 20) {
       };
     }
   }
-  bulkResults[idx] = { asin, error: 'Could not fetch', title: null, price: null, rating: null, availability: 'Error' };
+  bulkResults[idx] = {
+    asin, error: 'Could not fetch after 20 attempts',
+    title: null, price: null, rating: null, availability: 'Error'
+  };
   return false;
 }
 
@@ -247,89 +750,51 @@ function updateProgressUI(done, total, retryingCount) {
 }
 
 async function startBulk() {
-@@ -607,58 +626,47 @@
+  if (bulkRunning || uploadedAsins.length === 0) return;
+  bulkRunning = true;
+  bulkResults = [];
+
+  const domain = document.getElementById('domain').value;
+  const total  = uploadedAsins.length;
+
+  document.getElementById('bulkBtn').disabled = true;
   document.getElementById('progressWrap').classList.add('show');
   document.getElementById('bulkResults').classList.remove('show');
 
-  // ── PASS 1: Fetch all ASINs ─────────────────────────────────
-  setProgress('Pass 1 of 2 — Fetching all ASINs…', 0, total, 'Starting…');
-
   // Pre-fill placeholders so indices are stable
   for (let i = 0; i < total; i++) {
-    const asin = uploadedAsins[i];
-    setProgress('Pass 1 of 2 — Fetching all ASINs…', i, total, `Fetching ${asin}… (${i+1}/${total})`);
-    const data = await fetchWithRetry(asin, domain);
-    bulkResults.push(data);
-    if (i < total - 1) await sleep(350);
     bulkResults.push({
       asin: uploadedAsins[i], error: 'Pending',
       title: null, price: null, rating: null, availability: 'Pending'
     });
   }
 
-  // ── Check failures after pass 1 ─────────────────────────────
-  let failed = bulkResults.filter(isFailed);
   updateProgressUI(0, total, 0);
 
-  if (failed.length > 0) {
-    // Show intermediate table while retrying
-    renderBulkTable(false);
-  // Launch ALL ASINs in parallel — each keeps retrying until success
-  // Stagger start 150ms apart to avoid all hitting server simultaneously
+  // All ASINs fire simultaneously — staggered 150ms apart
+  // Each one independently keeps retrying until it gets data (up to 20 attempts)
   const promises = uploadedAsins.map((asin, idx) =>
     sleep(idx * 150).then(() => fetchUntilSuccess(asin, domain, idx))
   );
 
-    // Small pause before retrying
-    setProgress(`Pass 2 of 2 — Retrying ${failed.length} failed ASINs…`, 0, failed.length, 'Waiting 3s before retry…');
-    await sleep(3000); // let Amazon calm down
-
-    for (let i = 0; i < failed.length; i++) {
-      const asin = failed[i].asin;
-      setProgress(
-        `Pass 2 of 2 — Retrying ${failed.length} failed ASINs…`,
-        i, failed.length,
-        `Retrying ${asin}… (${i+1}/${failed.length})`
-      );
-
-      // Longer retry with more attempts for the second pass
-      const retried = await fetchWithRetry(asin, domain, 6);
-
-      // Replace the failed result in bulkResults
-      const idx = bulkResults.findIndex(r => r.asin === asin);
-      if (idx !== -1) {
-        bulkResults[idx] = retried;
-      }
-  // Refresh UI every 600ms while running
+  // Refresh UI + table every 600ms while running
   let allDone = false;
   const uiInterval = setInterval(() => {
     if (allDone) { clearInterval(uiInterval); return; }
-    const done      = bulkResults.filter(r => r.availability !== 'Pending' && r.availability !== 'Retrying' && !isFailed(r)).length;
-    const retrying  = bulkResults.filter(r => r.availability === 'Retrying' || r.availability === 'Pending').length;
+    const done     = bulkResults.filter(r => !isFailed(r) && r.availability !== 'Pending' && r.availability !== 'Retrying').length;
+    const retrying = bulkResults.filter(r => r.availability === 'Retrying' || r.availability === 'Pending').length;
     updateProgressUI(done, total, retrying);
     renderBulkTable(false);
   }, 600);
 
-      if (i < failed.length - 1) await sleep(500);
-    }
-  }
-  // Wait for every single ASIN to resolve
+  // Wait for every ASIN to finish (success or exhausted retries)
   await Promise.all(promises);
   allDone = true;
   clearInterval(uiInterval);
 
-  // ── Final check — any still failing? ────────────────────────
-  const stillFailed = bulkResults.filter(isFailed);
-  const successCount = bulkResults.length - stillFailed.length;
-  // Final counts
   const successCount = bulkResults.filter(r => !isFailed(r)).length;
   const failedCount  = bulkResults.filter(isFailed).length;
 
-  setProgress('✓ Done!', bulkResults.length, bulkResults.length,
-    stillFailed.length > 0
-      ? `✅ ${successCount} fetched · ⚠ ${stillFailed.length} could not be fetched (Amazon blocked)`
-      : `✅ All ${successCount} ASINs fetched successfully!`
-  );
   document.getElementById('progressLabel').textContent   = '✓ Complete';
   document.getElementById('progressBar').style.width     = '100%';
   document.getElementById('progressCount').textContent   = `${total} / ${total}`;
@@ -339,7 +804,11 @@ async function startBulk() {
 
   renderBulkTable(true);
   bulkRunning = false;
-@@ -670,6 +678,8 @@
+  document.getElementById('bulkBtn').disabled = false;
+}
+
+function availClass(status) {
+  if (status === 'In Stock')     return 'tbl-in';
   if (status === 'Out of Stock') return 'tbl-out';
   if (status === 'Low Stock')    return 'tbl-low';
   if (status === 'Error')        return 'tbl-err';
@@ -348,20 +817,24 @@ async function startBulk() {
   return 'tbl-unk';
 }
 
-@@ -681,141 +691,142 @@
+function renderBulkTable(isFinal = true) {
+  const total   = bulkResults.length;
+  const failed  = bulkResults.filter(isFailed);
+  const success = total - failed.length;
+  const display = bulkResults.slice(0, 10);
 
   document.getElementById('resultsTitle').textContent = `Results — ${total} ASINs`;
 
   const retrying = bulkResults.filter(r => r.availability === 'Retrying' || r.availability === 'Pending').length;
   let meta = `✅ ${success} fetched`;
-  if (failed.length > 0 && !isFinal) meta += ` · ⏳ ${failed.length} retrying…`;
-  if (retrying > 0)                  meta += ` · 🔄 ${retrying} retrying…`;
-  else if (failed.length > 0)        meta += ` · ❌ ${failed.length} failed`;
+  if (retrying > 0)           meta += ` · 🔄 ${retrying} retrying…`;
+  else if (failed.length > 0) meta += ` · ❌ ${failed.length} failed`;
   document.getElementById('resultsMeta').textContent = meta;
 
+  // Show note if more than 10 — prompt download for full data
   const moreNote = document.getElementById('moreNote');
   if (total > 10) {
-    moreNote.textContent = `📋 Showing first 10 of ${total} results on screen. Download the report to see all data.`;
+    moreNote.textContent = `📋 Showing first 10 of ${total} ASINs on dashboard. Download the report to see all ${total} products.`;
     moreNote.classList.add('show');
   } else {
     moreNote.classList.remove('show');
@@ -369,13 +842,13 @@ async function startBulk() {
 
   const tbody = document.getElementById('bulkTableBody');
   tbody.innerHTML = display.map((r, i) => {
-    const hasFail = isFailed(r);
-    const titleTxt = r.title
+    const isPending = r.availability === 'Pending' || r.availability === 'Retrying';
+    const titleTxt  = r.title
       ? r.title.slice(0, 55) + (r.title.length > 55 ? '…' : '')
-      : (hasFail ? `⚠ ${r.error || 'No data'}` : '—');
+      : (isPending ? '🔄 Fetching…' : isFailed(r) ? `⚠ ${r.error || 'No data'}` : '—');
     return `
     <tr>
-      <td style="color:var(--text3)">${i + 1}</td>
+      <td style="color:var(--text3);font-size:11px">${i + 1}</td>
       <td class="asin-cell">
         <a href="https://www.amazon.in/dp/${r.asin}" target="_blank"
            style="color:var(--text);text-decoration:none;" title="Open on Amazon">
