@@ -179,6 +179,65 @@
       main { padding: 1.5rem 1rem 3rem; }
       header { padding: 1rem; }
     }
+
+    /* ── File format guide ── */
+    .format-guide {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); margin-bottom: 1.25rem; overflow: hidden;
+    }
+    .format-guide-title {
+      padding: 0.75rem 1.1rem; font-size: 13px; font-weight: 600;
+      color: var(--text2); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface2);
+    }
+    .format-guide-body {
+      padding: 1.1rem; display: grid;
+      grid-template-columns: 1fr 1fr; gap: 1.25rem;
+    }
+    @media (max-width: 640px) { .format-guide-body { grid-template-columns: 1fr; } }
+    .format-rules { display: flex; flex-direction: column; gap: 9px; }
+    .format-rule {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 12px; color: var(--text2); line-height: 1.5;
+    }
+    .rule-icon {
+      flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+      display: grid; place-items: center; font-size: 10px; font-weight: 700; margin-top: 1px;
+    }
+    .rule-ok  { background: #0f2e1a; color: var(--green); border: 1px solid #1a4d2a; }
+    .rule-no  { background: #2e0f0f; color: var(--red);   border: 1px solid #4d1a1a; }
+    .format-rule code {
+      font-family: var(--mono); font-size: 11px; background: var(--surface3);
+      padding: 1px 6px; border-radius: 4px; color: var(--accent);
+      border: 1px solid var(--border2);
+    }
+    /* Spreadsheet preview */
+    .format-preview { font-size: 11px; }
+    .preview-label { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+    .preview-sheet {
+      border: 1px solid var(--border2); border-radius: 6px; overflow: hidden;
+      background: var(--surface2);
+    }
+    .preview-wrong { opacity: 0.8; }
+    .sheet-header, .sheet-row {
+      display: flex; border-bottom: 1px solid var(--border);
+    }
+    .sheet-row:last-child { border-bottom: none; }
+    .sheet-more { opacity: 0.4; }
+    .sheet-cell {
+      padding: 5px 8px; font-family: var(--mono);
+      font-size: 10px; border-right: 1px solid var(--border);
+    }
+    .sheet-cell:last-child { border-right: none; }
+    .sheet-col-a { min-width: 110px; }
+    .sheet-col-b { flex: 1; }
+    .header-cell  { font-weight: 700; background: var(--surface3); color: var(--text2); font-family: var(--sans); font-size: 10px; }
+    .asin-cell-pre { color: var(--accent); }
+    .other-cell   { color: var(--text3); font-family: var(--sans); }
+    .wrong-header { color: var(--red) !important; }
+    .wrong-cell   { color: var(--red); opacity: 0.7; }
+
   </style>
 </head>
 <body>
@@ -279,7 +338,79 @@
   <div class="panel" id="panel-bulk">
     <div class="hero">
       <h2>Bulk <span>ASIN Lookup</span></h2>
-      <p>Upload an Excel or CSV file with an <strong>ASIN</strong> column — we'll fetch all products and generate a report</p>
+      <p>Upload an Excel or CSV file — we'll fetch all products in parallel and generate a full report</p>
+    </div>
+
+    <!-- File format guide -->
+    <div class="format-guide">
+      <div class="format-guide-title">
+        <span>📋</span> How to format your file
+      </div>
+      <div class="format-guide-body">
+        <div class="format-rules">
+          <div class="format-rule">
+            <span class="rule-icon rule-ok">✓</span>
+            <span>Column header must be exactly <code>ASIN</code> (uppercase)</span>
+          </div>
+          <div class="format-rule">
+            <span class="rule-icon rule-ok">✓</span>
+            <span>All ASINs must be in a <strong>single column</strong> — one per row</span>
+          </div>
+          <div class="format-rule">
+            <span class="rule-icon rule-ok">✓</span>
+            <span>Each ASIN is exactly <strong>10 characters</strong> (letters and numbers)</span>
+          </div>
+          <div class="format-rule">
+            <span class="rule-icon rule-ok">✓</span>
+            <span>Accepts <strong>.xlsx</strong>, <strong>.xls</strong>, and <strong>.csv</strong> files</span>
+          </div>
+          <div class="format-rule">
+            <span class="rule-icon rule-no">✗</span>
+            <span>Do NOT split ASINs across multiple columns</span>
+          </div>
+        </div>
+
+        <!-- Visual preview of correct format -->
+        <div class="format-preview">
+          <div class="preview-label">✅ Correct format</div>
+          <div class="preview-sheet">
+            <div class="sheet-header">
+              <div class="sheet-cell sheet-col-a header-cell">ASIN</div>
+              <div class="sheet-cell sheet-col-b other-cell">Other columns OK</div>
+            </div>
+            <div class="sheet-row">
+              <div class="sheet-cell sheet-col-a asin-cell-pre">B0FY66N9RX</div>
+              <div class="sheet-cell sheet-col-b other-cell">Product name…</div>
+            </div>
+            <div class="sheet-row">
+              <div class="sheet-cell sheet-col-a asin-cell-pre">B0DGXWJLX4</div>
+              <div class="sheet-cell sheet-col-b other-cell">Category…</div>
+            </div>
+            <div class="sheet-row">
+              <div class="sheet-cell sheet-col-a asin-cell-pre">B09G9FPHY6</div>
+              <div class="sheet-cell sheet-col-b other-cell">Brand…</div>
+            </div>
+            <div class="sheet-row sheet-more">
+              <div class="sheet-cell sheet-col-a" style="color:var(--text3)">…</div>
+              <div class="sheet-cell sheet-col-b" style="color:var(--text3)">…</div>
+            </div>
+          </div>
+
+          <div class="preview-label" style="margin-top:12px; color:var(--red)">❌ Wrong format</div>
+          <div class="preview-sheet preview-wrong">
+            <div class="sheet-header">
+              <div class="sheet-cell sheet-col-a header-cell wrong-header">asin</div>
+              <div class="sheet-cell sheet-col-b header-cell wrong-header">ASIN 2</div>
+              <div class="sheet-cell sheet-col-b header-cell wrong-header">ASIN 3</div>
+            </div>
+            <div class="sheet-row">
+              <div class="sheet-cell sheet-col-a wrong-cell">B0FY66N9RX</div>
+              <div class="sheet-cell sheet-col-b wrong-cell">B0DGXWJLX4</div>
+              <div class="sheet-cell sheet-col-b wrong-cell">B09G9FPHY6</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Drop zone -->
@@ -290,7 +421,7 @@
       <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])"/>
       <div class="upload-icon">📂</div>
       <div class="upload-title">Drop your file here or <span>browse</span></div>
-      <div class="upload-sub">Supports .xlsx, .xls, .csv — must have a column named <strong>ASIN</strong></div>
+      <div class="upload-sub">Supports .xlsx, .xls, .csv &nbsp;·&nbsp; Column must be named <strong>ASIN</strong></div>
     </div>
 
     <!-- File info -->
@@ -684,36 +815,30 @@ function availClass(status) {
 }
 
 function renderBulkTable(isFinal = true) {
-  const total    = bulkResults.length;
-  const failed   = bulkResults.filter(isFailed);
-  const success  = total - failed.length;
-  const display  = bulkResults.slice(0, 10);
+  const total   = bulkResults.length;
+  const failed  = bulkResults.filter(isFailed);
+  const success = total - failed.length;
 
   document.getElementById('resultsTitle').textContent = `Results — ${total} ASINs`;
 
   const retrying = bulkResults.filter(r => r.availability === 'Retrying' || r.availability === 'Pending').length;
   let meta = `✅ ${success} fetched`;
-  if (retrying > 0)                  meta += ` · 🔄 ${retrying} retrying…`;
-  else if (failed.length > 0)        meta += ` · ❌ ${failed.length} failed`;
+  if (retrying > 0)           meta += ` · 🔄 ${retrying} retrying…`;
+  else if (failed.length > 0) meta += ` · ❌ ${failed.length} failed`;
   document.getElementById('resultsMeta').textContent = meta;
 
-  const moreNote = document.getElementById('moreNote');
-  if (total > 10) {
-    moreNote.textContent = `📋 Showing first 10 of ${total} results on screen. Download the report to see all data.`;
-    moreNote.classList.add('show');
-  } else {
-    moreNote.classList.remove('show');
-  }
+  // Always hide the "first 10" note — we show everything now
+  document.getElementById('moreNote').classList.remove('show');
 
   const tbody = document.getElementById('bulkTableBody');
-  tbody.innerHTML = display.map((r, i) => {
-    const hasFail = isFailed(r);
-    const titleTxt = r.title
-      ? r.title.slice(0, 55) + (r.title.length > 55 ? '…' : '')
-      : (hasFail ? `⚠ ${r.error || 'No data'}` : '—');
+  tbody.innerHTML = bulkResults.map((r, i) => {
+    const isPending = r.availability === 'Pending' || r.availability === 'Retrying';
+    const titleTxt  = r.title
+      ? r.title.slice(0, 60) + (r.title.length > 60 ? '…' : '')
+      : (isPending ? '🔄 Fetching…' : isFailed(r) ? `⚠ ${r.error || 'No data'}` : '—');
     return `
     <tr>
-      <td style="color:var(--text3)">${i + 1}</td>
+      <td style="color:var(--text3);font-size:11px">${i + 1}</td>
       <td class="asin-cell">
         <a href="https://www.amazon.in/dp/${r.asin}" target="_blank"
            style="color:var(--text);text-decoration:none;" title="Open on Amazon">
@@ -721,7 +846,7 @@ function renderBulkTable(isFinal = true) {
         </a>
       </td>
       <td class="title-cell" title="${(r.title || '').replace(/"/g,"'")}">${titleTxt}</td>
-      <td class="price-cell">${r.price ? `₹${Number(r.price).toLocaleString('en-IN')}` : '—'}</td>
+      <td class="price-cell">${r.price ? `₹${Number(r.price).toLocaleString('en-IN')}` : (isPending ? '—' : '—')}</td>
       <td class="rating-cell">${r.rating ? `★ ${r.rating}` : '—'}</td>
       <td><span class="tbl-badge ${availClass(r.availability)}">${r.availability || 'Unknown'}</span></td>
     </tr>`;
