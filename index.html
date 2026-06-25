@@ -168,6 +168,7 @@
     .tbl-unk { background: var(--surface3); color: var(--text3); }
     .tbl-err      { background: #2e1a0f; color: #e8782a; }
     .tbl-retrying { background: #1a1a2e; color: #7c8bff; animation: pulse 1.2s ease-in-out infinite; }
+    .tbl-notfound { background: #2a1f0a; color: #c97b2a; border: 1px solid #5a3a0a; }
     .tbl-pending  { background: var(--surface3); color: var(--text3); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
     .table-wrap { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; overflow-x: auto; }
@@ -496,7 +497,7 @@ function switchTab(tab) {
 }
 
 /* ══ Single lookup ══════════════════════════════════════════════════════════ */
-let currentAsin = '', currentUrl = '', retryTimer = null, attemptCount = 0;
+let currentAsin = '', currentUrl = '', retryTimer = null;
 
 function saveHistory(asin, price) {
   if (!price) return;
@@ -567,53 +568,82 @@ function renderProduct(d) {
   showResult();
 }
 
-async function fetchOnce(asin, domain) {
-  const res = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
+let singleRunning = false;
+
+async function fetchSingle(asin, domain) {
+  const res  = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const text = await res.text();
   if (!text || !text.trim()) throw new Error('Empty response');
-  return JSON.parse(text);
+  const data = JSON.parse(text);
+  // dead=true means product doesn't exist — throw special error to stop retrying
+  if (data.dead) throw Object.assign(new Error(data.error), { dead: true });
+  if (data.error) throw new Error(data.error);
+  return data;
 }
 
-async function attempt(asin, domain) {
-  attemptCount++;
-  document.getElementById('attemptMsg').textContent =
-    attemptCount === 1 ? 'Connecting to Amazon…' : `Retry ${attemptCount}/5…`;
-  try {
-    const data = await fetchOnce(asin, domain);
-    if (data.error) {
-      if (attemptCount < 5) {
-        const delay = 800 * attemptCount;
-        document.getElementById('attemptMsg').textContent = `Blocked — retrying in ${(delay/1000).toFixed(1)}s…`;
-        retryTimer = setTimeout(() => attempt(asin, domain), delay);
+async function runForever(asin, domain) {
+  // Retries forever until data arrives — stops only if product is confirmed dead
+  let attempt = 0;
+  while (singleRunning) {
+    attempt++;
+
+    if (attempt > 1) {
+      const base   = attempt <= 5  ? 600
+                   : attempt <= 15 ? 1200
+                   : 2500;
+      const jitter = Math.random() * (attempt <= 5 ? 800 : attempt <= 15 ? 1500 : 2500);
+      await sleep(base + jitter);
+    }
+
+    const msgEl = document.getElementById('attemptMsg');
+    if (attempt === 1) {
+      msgEl.textContent = 'Connecting to Amazon…';
+    } else if (attempt <= 5) {
+      msgEl.textContent = `Blocked — retrying… (attempt ${attempt})`;
+    } else if (attempt <= 15) {
+      msgEl.textContent = `Amazon is blocking — still retrying… (attempt ${attempt})`;
+    } else {
+      msgEl.textContent = `Persistent retry… attempt ${attempt} — please wait`;
+    }
+
+    try {
+      const data = await fetchSingle(asin, domain);
+      if (!singleRunning) return;
+      renderProduct(data);
+      singleRunning = false;
+      return;
+    } catch(e) {
+      // If product confirmed dead — stop immediately, show error
+      if (e.dead) {
+        singleRunning = false;
+        showErr(`❌ Product not found — This ASIN does not exist on Amazon or has been delisted.`);
         return;
       }
-      showErr(data.error); return;
+      // Otherwise keep retrying
     }
-    renderProduct(data);
-  } catch(err) {
-    if (attemptCount < 5) {
-      const delay = 800 * attemptCount;
-      document.getElementById('attemptMsg').textContent = `Error — retrying in ${(delay/1000).toFixed(1)}s…`;
-      retryTimer = setTimeout(() => attempt(asin, domain), delay);
-      return;
-    }
-    showErr('Failed after 5 attempts. Try again.');
   }
 }
 
 function run() {
+  // Cancel any running fetch
+  singleRunning = false;
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  const raw = document.getElementById('asin').value.trim().toUpperCase();
+
+  const raw    = document.getElementById('asin').value.trim().toUpperCase();
   const domain = document.getElementById('domain').value;
-  const match = raw.match(/[A-Z0-9]{10}/);
+  const match  = raw.match(/[A-Z0-9]{10}/);
   if (!match) { showErr('Please enter a valid 10-character ASIN'); return; }
+
   currentAsin = match[0];
   document.getElementById('asin').value = currentAsin;
   document.getElementById('fetchBtn').disabled = true;
-  attemptCount = 0;
+  document.getElementById('errBox').classList.remove('show');
   showLoader();
-  attempt(currentAsin, domain);
+
+  // Start infinite retry loop
+  singleRunning = true;
+  runForever(currentAsin, domain);
 }
 
 function go(asin) { document.getElementById('asin').value = asin; run(); }
@@ -711,21 +741,20 @@ async function fetchOnceRaw(asin, domain) {
   const text = await res.text();
   if (!text || !text.trim()) throw new Error('Empty response');
   const data = JSON.parse(text);
+  if (data.dead) throw Object.assign(new Error(data.error), { dead: true });
   if (data.error) throw new Error(data.error);
   return data;
 }
 
 // Each ASIN keeps retrying independently until success or maxAttempts
 async function fetchUntilSuccess(asin, domain, idx) {
-  // Never give up — keeps retrying until data is fetched
+  // Retries forever — only stops if product is confirmed dead on Amazon
   let attempt = 0;
   while (true) {
     attempt++;
     try {
-      // Delay grows with attempts: starts fast, slows down after many failures
-      // attempt 1 = instant, 2-5 = 0.5-1.5s, 6-20 = 1-3s, 20+ = 2-5s
       if (attempt > 1) {
-        const base  = attempt <= 5 ? 500 : attempt <= 20 ? 1000 : 2000;
+        const base   = attempt <= 5  ? 500 : attempt <= 20 ? 1000 : 2000;
         const jitter = Math.random() * (attempt <= 5 ? 1000 : attempt <= 20 ? 2000 : 3000);
         await sleep(base + jitter);
       }
@@ -733,9 +762,17 @@ async function fetchUntilSuccess(asin, domain, idx) {
       bulkResults[idx] = data;
       return true;
     } catch(e) {
+      // Dead product — stop immediately, mark as not found
+      if (e.dead) {
+        bulkResults[idx] = {
+          asin, error: 'Not found on Amazon (delisted or invalid)',
+          title: null, price: null, rating: null, availability: 'Not Found'
+        };
+        return false;
+      }
+      // Blocked — keep retrying
       bulkResults[idx] = {
-        asin,
-        error: `Retrying… (attempt ${attempt})`,
+        asin, error: `Retrying… (attempt ${attempt})`,
         title: null, price: null, rating: null, availability: 'Retrying'
       };
     }
@@ -816,6 +853,7 @@ function availClass(status) {
   if (status === 'Error')        return 'tbl-err';
   if (status === 'Retrying')     return 'tbl-retrying';
   if (status === 'Pending')      return 'tbl-pending';
+  if (status === 'Not Found')    return 'tbl-notfound';
   return 'tbl-unk';
 }
 
