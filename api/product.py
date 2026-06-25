@@ -43,6 +43,20 @@ def is_blocked(html):
         "automated access",
     ])
 
+def is_dead_page(html):
+    """Detect Amazon 404 / dead product pages — no point retrying these."""
+    if not html:
+        return False
+    low = html.lower()
+    return any(x in low for x in [
+        "looking for something",
+        "not a functioning page",
+        "page on our site",
+        "dogs of amazon",
+        "we couldn\'t find that page",
+        "the web address you entered is not",
+    ])
+
 def clean_price(text):
     if not text:
         return None
@@ -79,6 +93,11 @@ def fetch_with_retry(url, max_attempts=6):
                 continue
 
             html = resp.text
+
+            # Dead product — stop immediately, no point retrying
+            if is_dead_page(html):
+                return None, "DEAD_PAGE"
+
             if is_blocked(html):
                 continue  # retry with new UA
 
@@ -229,6 +248,12 @@ def scrape(asin, domain):
     try:
         url = f"https://www.{domain}/dp/{asin}?th=1&psc=1"
         html, err = fetch_with_retry(url, max_attempts=6)
+        if err == "DEAD_PAGE":
+            return {
+                "error": "Product does not exist on Amazon. The ASIN may be invalid or delisted.",
+                "status": 404,
+                "dead": True
+            }
         if err:
             return {"error": err, "status": 422}
 
