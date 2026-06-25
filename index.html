@@ -308,7 +308,7 @@
     <!-- Progress -->
     <div class="progress-wrap" id="progressWrap">
       <div class="progress-header">
-        <div class="progress-label">Fetching products…</div>
+        <div class="progress-label" id="progressLabel">Fetching products…</div>
         <div class="progress-count" id="progressCount">0 / 0</div>
       </div>
       <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
@@ -565,10 +565,10 @@ function clearFile() {
   document.getElementById('bulkResults').classList.remove('show');
 }
 
-async function fetchWithRetry(asin, domain, maxTries = 5) {
+async function fetchWithRetry(asin, domain, maxTries = 4) {
   for (let i = 1; i <= maxTries; i++) {
     try {
-      if (i > 1) await sleep(700 * i);
+      if (i > 1) await sleep(600 * i);
       const res  = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
       if (!res.ok) continue;
       const text = await res.text();
@@ -577,44 +577,90 @@ async function fetchWithRetry(asin, domain, maxTries = 5) {
       if (!data.error) return data;
     } catch(e) { /* retry */ }
   }
-  return { asin, error: 'Failed after retries', title: null, price: null, rating: null, availability: 'Error' };
+  return { asin, error: 'Failed', title: null, price: null, rating: null, availability: 'Error' };
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function isFailed(r) {
+  // A result is "failed" if it has an error OR no title AND no price
+  return !!(r.error || (!r.title && !r.price));
+}
+
+function setProgress(label, current, total, currentMsg) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  document.getElementById('progressLabel').textContent  = label;
+  document.getElementById('progressBar').style.width    = pct + '%';
+  document.getElementById('progressCount').textContent  = `${current} / ${total}`;
+  document.getElementById('progressCurrent').textContent = currentMsg;
+}
 
 async function startBulk() {
   if (bulkRunning || uploadedAsins.length === 0) return;
   bulkRunning = true;
   bulkResults = [];
 
-  const domain  = document.getElementById('domain').value;
-  const total   = uploadedAsins.length;
+  const domain = document.getElementById('domain').value;
+  const total  = uploadedAsins.length;
 
   document.getElementById('bulkBtn').disabled = true;
   document.getElementById('progressWrap').classList.add('show');
   document.getElementById('bulkResults').classList.remove('show');
 
+  // ── PASS 1: Fetch all ASINs ─────────────────────────────────
+  setProgress('Pass 1 of 2 — Fetching all ASINs…', 0, total, 'Starting…');
+
   for (let i = 0; i < total; i++) {
     const asin = uploadedAsins[i];
-    const pct  = Math.round((i / total) * 100);
-
-    document.getElementById('progressBar').style.width  = pct + '%';
-    document.getElementById('progressCount').textContent = `${i} / ${total}`;
-    document.getElementById('progressCurrent').textContent = `Fetching ${asin}…`;
-
+    setProgress('Pass 1 of 2 — Fetching all ASINs…', i, total, `Fetching ${asin}… (${i+1}/${total})`);
     const data = await fetchWithRetry(asin, domain);
     bulkResults.push(data);
-
-    // Small delay between requests to avoid hammering
-    if (i < total - 1) await sleep(400);
+    if (i < total - 1) await sleep(350);
   }
 
-  // Done
-  document.getElementById('progressBar').style.width   = '100%';
-  document.getElementById('progressCount').textContent = `${total} / ${total}`;
-  document.getElementById('progressCurrent').textContent = '✓ All done!';
+  // ── Check failures after pass 1 ─────────────────────────────
+  let failed = bulkResults.filter(isFailed);
 
-  renderBulkTable();
+  if (failed.length > 0) {
+    // Show intermediate table while retrying
+    renderBulkTable(false);
+
+    // Small pause before retrying
+    setProgress(`Pass 2 of 2 — Retrying ${failed.length} failed ASINs…`, 0, failed.length, 'Waiting 3s before retry…');
+    await sleep(3000); // let Amazon calm down
+
+    for (let i = 0; i < failed.length; i++) {
+      const asin = failed[i].asin;
+      setProgress(
+        `Pass 2 of 2 — Retrying ${failed.length} failed ASINs…`,
+        i, failed.length,
+        `Retrying ${asin}… (${i+1}/${failed.length})`
+      );
+
+      // Longer retry with more attempts for the second pass
+      const retried = await fetchWithRetry(asin, domain, 6);
+
+      // Replace the failed result in bulkResults
+      const idx = bulkResults.findIndex(r => r.asin === asin);
+      if (idx !== -1) {
+        bulkResults[idx] = retried;
+      }
+
+      if (i < failed.length - 1) await sleep(500);
+    }
+  }
+
+  // ── Final check — any still failing? ────────────────────────
+  const stillFailed = bulkResults.filter(isFailed);
+  const successCount = bulkResults.length - stillFailed.length;
+
+  setProgress('✓ Done!', bulkResults.length, bulkResults.length,
+    stillFailed.length > 0
+      ? `✅ ${successCount} fetched · ⚠ ${stillFailed.length} could not be fetched (Amazon blocked)`
+      : `✅ All ${successCount} ASINs fetched successfully!`
+  );
+
+  renderBulkTable(true);
   bulkRunning = false;
   document.getElementById('bulkBtn').disabled = false;
 }
@@ -627,69 +673,91 @@ function availClass(status) {
   return 'tbl-unk';
 }
 
-function renderBulkTable() {
-  const total   = bulkResults.length;
-  const display = bulkResults.slice(0, 10);
-  const success = bulkResults.filter(r => !r.error).length;
-  const failed  = bulkResults.filter(r => r.error).length;
+function renderBulkTable(isFinal = true) {
+  const total    = bulkResults.length;
+  const failed   = bulkResults.filter(isFailed);
+  const success  = total - failed.length;
+  const display  = bulkResults.slice(0, 10);
 
   document.getElementById('resultsTitle').textContent = `Results — ${total} ASINs`;
-  document.getElementById('resultsMeta').textContent  =
-    `✅ ${success} fetched · ❌ ${failed} failed`;
+
+  let meta = `✅ ${success} fetched`;
+  if (failed.length > 0 && !isFinal) meta += ` · ⏳ ${failed.length} retrying…`;
+  else if (failed.length > 0)        meta += ` · ❌ ${failed.length} failed`;
+  document.getElementById('resultsMeta').textContent = meta;
 
   const moreNote = document.getElementById('moreNote');
-  if (total > 10) moreNote.classList.add('show'); else moreNote.classList.remove('show');
+  if (total > 10) {
+    moreNote.textContent = `📋 Showing first 10 of ${total} results on screen. Download the report to see all data.`;
+    moreNote.classList.add('show');
+  } else {
+    moreNote.classList.remove('show');
+  }
 
   const tbody = document.getElementById('bulkTableBody');
-  tbody.innerHTML = display.map((r, i) => `
+  tbody.innerHTML = display.map((r, i) => {
+    const hasFail = isFailed(r);
+    const titleTxt = r.title
+      ? r.title.slice(0, 55) + (r.title.length > 55 ? '…' : '')
+      : (hasFail ? `⚠ ${r.error || 'No data'}` : '—');
+    return `
     <tr>
       <td style="color:var(--text3)">${i + 1}</td>
-      <td class="asin-cell">${r.asin || '—'}</td>
-      <td class="title-cell" title="${r.title || ''}">${r.title ? r.title.slice(0, 55) + (r.title.length > 55 ? '…' : '') : (r.error ? '⚠ ' + r.error : '—')}</td>
+      <td class="asin-cell">
+        <a href="https://www.amazon.in/dp/${r.asin}" target="_blank"
+           style="color:var(--text);text-decoration:none;" title="Open on Amazon">
+          ${r.asin || '—'}
+        </a>
+      </td>
+      <td class="title-cell" title="${(r.title || '').replace(/"/g,"'")}">${titleTxt}</td>
       <td class="price-cell">${r.price ? `₹${Number(r.price).toLocaleString('en-IN')}` : '—'}</td>
       <td class="rating-cell">${r.rating ? `★ ${r.rating}` : '—'}</td>
       <td><span class="tbl-badge ${availClass(r.availability)}">${r.availability || 'Unknown'}</span></td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 
   document.getElementById('bulkResults').classList.add('show');
 }
 
 /* ── Download CSV ──────────────────────────────────────────────────────── */
 function downloadCSV() {
-  const now  = new Date().toISOString().slice(0, 10);
-  const headers = ['#','ASIN','Title','Price (INR)','Rating','Availability','URL','Fetched At'];
-  const rows = bulkResults.map((r, i) => [
+  const now     = new Date().toISOString().slice(0, 10);
+  const headers = ['#','ASIN','Title','Price (INR)','Rating','Availability','Status','URL','Fetched At'];
+  const rows    = bulkResults.map((r, i) => [
     i + 1,
     r.asin || '',
     `"${(r.title || r.error || '').replace(/"/g, '""')}"`,
-    r.price || '',
+    r.price  || '',
     r.rating || '',
     r.availability || '',
+    isFailed(r) ? 'Failed' : 'Success',
     r.url || `https://www.amazon.in/dp/${r.asin}`,
-    new Date().toLocaleString('en-IN'),
+    `"${new Date().toLocaleString('en-IN')}"`,
   ]);
-  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `price-scout-report-${now}.csv`;
+  const csv  = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }); // BOM for Excel compatibility
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `price-scout-${now}.csv`;
   a.click();
 }
 
 /* ── Download Excel ────────────────────────────────────────────────────── */
 function downloadXLSX() {
-  const now = new Date().toISOString().slice(0, 10);
+  const now    = new Date().toISOString().slice(0, 10);
+  const domain = document.getElementById('domain').value;
 
+  // Main data sheet
   const wsData = [
-    ['#', 'ASIN', 'Title', 'Price (INR)', 'Rating', 'Availability', 'Amazon URL', 'Fetched At'],
+    ['#', 'ASIN', 'Title', 'Price (INR)', 'Rating', 'Availability', 'Status', 'Amazon URL', 'Fetched At'],
     ...bulkResults.map((r, i) => [
       i + 1,
       r.asin || '',
       r.title || r.error || '',
-      r.price || '',
+      r.price  || '',
       r.rating || '',
       r.availability || '',
+      isFailed(r) ? 'Failed' : 'Success',
       r.url || `https://www.amazon.in/dp/${r.asin}`,
       new Date().toLocaleString('en-IN'),
     ])
@@ -697,44 +765,56 @@ function downloadXLSX() {
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-  // Column widths
   ws['!cols'] = [
-    { wch: 4  },  // #
-    { wch: 14 },  // ASIN
-    { wch: 55 },  // Title
-    { wch: 12 },  // Price
-    { wch: 8  },  // Rating
-    { wch: 15 },  // Availability
-    { wch: 42 },  // URL
-    { wch: 20 },  // Fetched At
+    { wch: 4  }, { wch: 14 }, { wch: 55 }, { wch: 12 },
+    { wch: 8  }, { wch: 15 }, { wch: 10 }, { wch: 42 }, { wch: 22 },
   ];
+  XLSX.utils.book_append_sheet(wb, ws, 'All Products');
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Price Scout Report');
+  // Failed sheet — easy to re-upload
+  const failedRows = bulkResults.filter(isFailed);
+  if (failedRows.length > 0) {
+    const failData = [
+      ['ASIN', 'Error', 'Amazon URL'],
+      ...failedRows.map(r => [
+        r.asin || '',
+        r.error || 'No data fetched',
+        `https://www.amazon.in/dp/${r.asin}`,
+      ])
+    ];
+    const wsFail = XLSX.utils.aoa_to_sheet(failData);
+    wsFail['!cols'] = [{ wch: 14 }, { wch: 30 }, { wch: 42 }];
+    XLSX.utils.book_append_sheet(wb, wsFail, 'Failed ASINs');
+  }
 
   // Summary sheet
-  const success = bulkResults.filter(r => !r.error && r.price).length;
-  const failed  = bulkResults.filter(r => r.error || !r.title).length;
-  const outOfStock = bulkResults.filter(r => r.availability === 'Out of Stock').length;
-  const avgPrice = bulkResults.filter(r => r.price).reduce((s, r) => s + r.price, 0) /
-                   (bulkResults.filter(r => r.price).length || 1);
+  const successCount  = bulkResults.filter(r => !isFailed(r)).length;
+  const outOfStock    = bulkResults.filter(r => r.availability === 'Out of Stock').length;
+  const prices        = bulkResults.filter(r => r.price).map(r => r.price);
+  const avgPrice      = prices.length ? Math.round(prices.reduce((a,b) => a+b, 0) / prices.length) : 0;
+  const minPrice      = prices.length ? Math.min(...prices) : 0;
+  const maxPrice      = prices.length ? Math.max(...prices) : 0;
 
   const summaryData = [
-    ['Price Scout Report Summary'],
-    ['Generated', new Date().toLocaleString('en-IN')],
-    ['Domain', document.getElementById('domain').value],
+    ['Price Scout Report — Summary'],
     [''],
-    ['Total ASINs', bulkResults.length],
-    ['Successfully Fetched', success],
-    ['Failed / Error', failed],
-    ['Out of Stock', outOfStock],
-    ['Average Price (INR)', Math.round(avgPrice)],
+    ['Generated',          new Date().toLocaleString('en-IN')],
+    ['Domain',             domain],
+    [''],
+    ['Total ASINs',        bulkResults.length],
+    ['Successfully Fetched', successCount],
+    ['Failed / Not Found', failedRows.length],
+    ['Out of Stock',       outOfStock],
+    [''],
+    ['Average Price (INR)', avgPrice],
+    ['Min Price (INR)',     minPrice],
+    ['Max Price (INR)',     maxPrice],
   ];
   const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
   ws2['!cols'] = [{ wch: 25 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
 
-  XLSX.writeFile(wb, `price-scout-report-${now}.xlsx`);
+  XLSX.writeFile(wb, `price-scout-${now}.xlsx`);
 }
 </script>
 </body>
