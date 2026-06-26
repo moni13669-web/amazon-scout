@@ -311,7 +311,7 @@
           <div class="stat">
             <div class="stat-label">Rating</div>
             <div class="stat-value rating-val" id="rating">—</div>
-            <div class="stat-sub">out of 5</div>
+            <div class="stat-sub">out of 5 &nbsp;·&nbsp; <span id="ratingCount">— ratings</span></div>
           </div>
           <div class="stat">
             <div class="stat-label">Last Fetched</div>
@@ -474,6 +474,7 @@
               <th>Title</th>
               <th>Price</th>
               <th>Rating</th>
+              <th>Ratings</th>
               <th>Availability</th>
             </tr>
           </thead>
@@ -542,7 +543,13 @@ function showResult() {
 
 function setBadge(status) {
   const el = document.getElementById('badge');
-  const map = { 'In Stock':['badge-in','In Stock'], 'Out of Stock':['badge-out','Out of Stock'], 'Low Stock':['badge-low','Low Stock'] };
+  const map = {
+    'In Stock':                ['badge-in',  'In Stock'],
+    'Low Stock':               ['badge-low', 'Low Stock'],
+    'Out of Stock':            ['badge-out', 'Out of Stock'],
+    'Currently Unavailable':   ['badge-out', 'Currently Unavailable'],
+    'Temporarily Out of Stock':['badge-low', 'Temporarily OOS'],
+  };
   const [cls, label] = map[status] || ['badge-unk', status || 'Unknown'];
   el.className = `badge ${cls}`; el.textContent = label;
 }
@@ -559,6 +566,8 @@ function renderProduct(d) {
   } else {
     document.getElementById('rating').textContent = 'N/A';
   }
+  document.getElementById('ratingCount').textContent =
+    d.rating_count ? Number(d.rating_count).toLocaleString('en-IN') + ' ratings' : '— ratings';
   const now = new Date();
   document.getElementById('fetchedAt').textContent = now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
   document.getElementById('fetchedDate').textContent = now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
@@ -847,13 +856,15 @@ async function startBulk() {
 }
 
 function availClass(status) {
-  if (status === 'In Stock')     return 'tbl-in';
-  if (status === 'Out of Stock') return 'tbl-out';
-  if (status === 'Low Stock')    return 'tbl-low';
-  if (status === 'Error')        return 'tbl-err';
-  if (status === 'Retrying')     return 'tbl-retrying';
-  if (status === 'Pending')      return 'tbl-pending';
-  if (status === 'Not Found')    return 'tbl-notfound';
+  if (status === 'In Stock')                 return 'tbl-in';
+  if (status === 'Low Stock')                return 'tbl-low';
+  if (status === 'Out of Stock')             return 'tbl-out';
+  if (status === 'Currently Unavailable')    return 'tbl-out';
+  if (status === 'Temporarily Out of Stock') return 'tbl-low';
+  if (status === 'Error')                    return 'tbl-err';
+  if (status === 'Retrying')                 return 'tbl-retrying';
+  if (status === 'Pending')                  return 'tbl-pending';
+  if (status === 'Not Found')                return 'tbl-notfound';
   return 'tbl-unk';
 }
 
@@ -897,6 +908,7 @@ function renderBulkTable(isFinal = true) {
       <td class="title-cell" title="${(r.title || '').replace(/"/g,"'")}">${titleTxt}</td>
       <td class="price-cell">${r.price ? `₹${Number(r.price).toLocaleString('en-IN')}` : '—'}</td>
       <td class="rating-cell">${r.rating ? `★ ${r.rating}` : '—'}</td>
+      <td style="color:var(--text3);font-size:11px">${r.rating_count ? Number(r.rating_count).toLocaleString('en-IN') : '—'}</td>
       <td><span class="tbl-badge ${availClass(r.availability)}">${r.availability || 'Unknown'}</span></td>
     </tr>`;
   }).join('');
@@ -907,13 +919,14 @@ function renderBulkTable(isFinal = true) {
 /* ── Download CSV ──────────────────────────────────────────────────────── */
 function downloadCSV() {
   const now     = new Date().toISOString().slice(0, 10);
-  const headers = ['#','ASIN','Title','Price (INR)','Rating','Availability','Status','URL','Fetched At'];
+  const headers = ['#','ASIN','Title','Price (INR)','Rating','Ratings Count','Availability','Status','URL','Fetched At'];
   const rows    = bulkResults.map((r, i) => [
     i + 1,
     r.asin || '',
     `"${(r.title || r.error || '').replace(/"/g, '""')}"`,
     r.price  || '',
     r.rating || '',
+    r.rating_count || '',
     r.availability || '',
     isFailed(r) ? 'Failed' : 'Success',
     r.url || `https://www.amazon.in/dp/${r.asin}`,
@@ -934,13 +947,14 @@ function downloadXLSX() {
 
   // Main data sheet
   const wsData = [
-    ['#', 'ASIN', 'Title', 'Price (INR)', 'Rating', 'Availability', 'Status', 'Amazon URL', 'Fetched At'],
+    ['#', 'ASIN', 'Title', 'Price (INR)', 'Rating', 'Ratings Count', 'Availability', 'Status', 'Amazon URL', 'Fetched At'],
     ...bulkResults.map((r, i) => [
       i + 1,
       r.asin || '',
       r.title || r.error || '',
       r.price  || '',
       r.rating || '',
+      r.rating_count || '',
       r.availability || '',
       isFailed(r) ? 'Failed' : 'Success',
       r.url || `https://www.amazon.in/dp/${r.asin}`,
@@ -952,7 +966,7 @@ function downloadXLSX() {
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   ws['!cols'] = [
     { wch: 4  }, { wch: 14 }, { wch: 55 }, { wch: 12 },
-    { wch: 8  }, { wch: 15 }, { wch: 10 }, { wch: 42 }, { wch: 22 },
+    { wch: 8  }, { wch: 14 }, { wch: 20 }, { wch: 10 }, { wch: 42 }, { wch: 22 },
   ];
   XLSX.utils.book_append_sheet(wb, ws, 'All Products');
 
