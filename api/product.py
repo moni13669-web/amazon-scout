@@ -23,16 +23,13 @@ def get_headers():
     ua = random.choice(USER_AGENTS)
     return {
         "User-Agent": ua,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-IN,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
     }
 
 def is_blocked(html):
@@ -60,50 +57,27 @@ def is_dead_page(html):
     ])
 
 def clean_price(text):
-    """
-    Robustly parse any INR/USD price string.
-    Handles commas (1,299 / 12,999 / 1,00,000 / 10,00,000),
-    rupee symbol, currency codes, trailing dots, etc.
-    No upper-bound cap — handles prices up to any amount.
-    """
     if not text:
         return None
     try:
-        # Strip currency symbols and whitespace
-        s = str(text).strip()
-        s = re.sub(r"[₹$£€¥\s]", "", s)
-        s = re.sub(r"[^\d.,]", "", s)
-
-        # Remove all commas (Indian or international formatting)
-        s = s.replace(",", "")
-
-        # Handle multiple dots — keep only integer part
-        parts = s.split(".")
+        cleaned = re.sub(r"[^\d.]", "", str(text).replace(",", ""))
+        parts = cleaned.split(".")
         if len(parts) > 2:
-            s = parts[0]
-        elif len(parts) == 2:
-            # e.g. "1299.00" → keep as float
-            pass
-
-        if not s or s == ".":
-            return None
-
-        val = float(s)
-        # Must be at least ₹1 — no upper bound
-        return val if val >= 1 else None
+            cleaned = parts[0]
+        val = float(cleaned)
+        return val if 1 <= val <= 500000 else None
     except Exception:
         return None
-
 
 def fetch_with_retry(url, max_attempts=6):
     session = requests.Session()
     for attempt in range(max_attempts):
         try:
             if attempt > 0:
-                time.sleep(random.uniform(0.8, 2.0) * attempt)
+                time.sleep(random.uniform(0.5, 1.5) * attempt)
 
             session.headers.update(get_headers())
-            resp = session.get(url, timeout=15, allow_redirects=True)
+            resp = session.get(url, timeout=12, allow_redirects=True)
 
             if resp.status_code == 404:
                 return None, "Product not found. Check the ASIN."
@@ -142,20 +116,27 @@ AVAIL_CURRENTLY_UNAVAIL = "Currently Unavailable"
 AVAIL_OUT_OF_STOCK      = "Out of Stock"
 AVAIL_UNKNOWN           = "Unknown"
 
+# Phrases Amazon uses and what they map to
 _PHRASE_MAP = [
-    ("temporarily out of stock",                        AVAIL_TEMP_OOS),
-    ("we are working hard to be back in stock",         AVAIL_TEMP_OOS),
-    ("working hard to be back in stock",                AVAIL_TEMP_OOS),
-    ("currently unavailable",                           AVAIL_CURRENTLY_UNAVAIL),
-    ("we don't know when or if this item will be back", AVAIL_CURRENTLY_UNAVAIL),
-    ("we do not know when or if this item will be back",AVAIL_CURRENTLY_UNAVAIL),
-    ("in stock",                                        AVAIL_IN_STOCK),
-    ("out of stock",                                    AVAIL_OUT_OF_STOCK),
-    ("not available",                                   AVAIL_OUT_OF_STOCK),
-    ("only",                                            None),  # checked separately
+    # Temporarily out of stock (working hard to restock)
+    ("temporarily out of stock",                              AVAIL_TEMP_OOS),
+    ("we are working hard to be back in stock",               AVAIL_TEMP_OOS),
+    ("working hard to be back in stock",                      AVAIL_TEMP_OOS),
+    # Currently unavailable (no restock signal)
+    ("currently unavailable",                                 AVAIL_CURRENTLY_UNAVAIL),
+    ("we don't know when or if this item will be back",       AVAIL_CURRENTLY_UNAVAIL),
+    ("we do not know when or if this item will be back",      AVAIL_CURRENTLY_UNAVAIL),
+    # In stock variants
+    ("in stock",                                              AVAIL_IN_STOCK),
+    # Low stock
+    ("only",                                                  None),   # handled separately (needs "left")
+    # Out of stock
+    ("out of stock",                                          AVAIL_OUT_OF_STOCK),
+    ("not available",                                         AVAIL_OUT_OF_STOCK),
 ]
 
 def _phrase_to_avail(txt):
+    """Map a lowercased text blob to an availability constant, or None."""
     for phrase, status in _PHRASE_MAP:
         if phrase in txt:
             if phrase == "only":
@@ -165,7 +146,14 @@ def _phrase_to_avail(txt):
             return status
     return None
 
+
 def detect_availability(soup, price):
+    """
+    Multi-layer availability detection.
+    Priority: explicit DOM signals > buybox buttons > full-page text > price fallback.
+    """
+
+    # ── Layer 1: #availability div (most reliable) ────────────────────────────
     avail_div = soup.find("div", {"id": "availability"})
     if avail_div:
         txt = avail_div.get_text(separator=" ", strip=True).lower()
@@ -173,10 +161,12 @@ def detect_availability(soup, price):
         if result:
             return result
 
+    # ── Layer 2: Add-to-Cart / Buy-Now buttons present → definitely In Stock ──
     if soup.find("input", {"id": "add-to-cart-button"}) or \
        soup.find("input", {"id": "buy-now-button"}):
         return AVAIL_IN_STOCK
 
+    # ── Layer 3: merchant-info block ──────────────────────────────────────────
     merchant = soup.find("div", {"id": "merchant-info"})
     if merchant:
         txt = merchant.get_text(separator=" ", strip=True).lower()
@@ -184,169 +174,27 @@ def detect_availability(soup, price):
         if result:
             return result
 
+    # ── Layer 4: outOfStock div ───────────────────────────────────────────────
     oos_div = soup.find("div", {"id": "outOfStock"})
     if oos_div:
         txt = oos_div.get_text(separator=" ", strip=True).lower()
         result = _phrase_to_avail(txt)
         if result:
             return result
+        # div exists but no matching phrase → treat as unavailable
         return AVAIL_OUT_OF_STOCK
 
+    # ── Layer 5: Full-page text sweep ─────────────────────────────────────────
     page_text = soup.get_text(separator=" ", strip=True).lower()
     result = _phrase_to_avail(page_text)
     if result:
         return result
 
+    # ── Layer 6: Price fallback ───────────────────────────────────────────────
     if price:
         return AVAIL_IN_STOCK
 
     return AVAIL_UNKNOWN
-
-
-def _extract_price_from_block(block):
-    """
-    Given a BeautifulSoup tag that is an a-price block,
-    extract the numeric price, skipping if it's a strikethrough/MRP block.
-    """
-    cls = " ".join(block.get("class", []))
-    # Skip MRP / strikethrough price blocks
-    if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
-        return None
-
-    # Primary: a-offscreen span (hidden accessible text, most reliable)
-    off = block.find("span", {"class": "a-offscreen"})
-    if off:
-        return clean_price(off.get_text())
-
-    # Fallback: whole + fraction
-    whole = block.find("span", {"class": "a-price-whole"})
-    if whole:
-        frac = block.find("span", {"class": "a-price-fraction"})
-        w = re.sub(r"[^\d]", "", whole.get_text())
-        f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
-        if w:
-            try:
-                return clean_price(f"{w}.{f}")
-            except Exception:
-                pass
-    return None
-
-
-def parse_price(soup):
-    """
-    Extract the correct buybox/sale price from Amazon product page.
-
-    Priority order (most → least reliable):
-    1. corePriceDisplay buybox block  — the actual purchase price shown in the buy box
-    2. priceToPay block               — newer Amazon layout
-    3. apex_desktop block             — another buybox container
-    4. twister/variation price        — variant selection price
-    5. Page-wide a-price scan         — skip strikethrough ones
-    6. Legacy priceblock IDs          — older Amazon pages
-    7. Whole+fraction directly        — last resort
-    """
-    price = None
-
-    # ── Method 1: corePriceDisplay — most reliable buybox price ──────────────
-    # This div specifically holds the price you PAY, not the MRP
-    core_ids = [
-        "corePriceDisplay_desktop_feature_div",
-        "corePrice_desktop",
-        "corePrice_feature_div",
-    ]
-    for cid in core_ids:
-        core = soup.find("div", {"id": cid})
-        if not core:
-            continue
-        # Within core, find the priceToPay span first (most accurate)
-        ttp = core.find("span", {"class": "priceToPay"})
-        if ttp:
-            off = ttp.find("span", {"class": "a-offscreen"})
-            if off:
-                p = clean_price(off.get_text())
-                if p:
-                    return p
-
-        # Then try non-strikethrough a-price blocks
-        for block in core.find_all("span", {"class": "a-price"}):
-            p = _extract_price_from_block(block)
-            if p:
-                price = p
-                break
-        if price:
-            break
-
-    # ── Method 2: priceToPay anywhere on page ────────────────────────────────
-    if not price:
-        ttp = soup.find("span", {"class": "priceToPay"})
-        if ttp:
-            off = ttp.find("span", {"class": "a-offscreen"})
-            if off:
-                price = clean_price(off.get_text())
-
-    # ── Method 3: apex_desktop / apex_offerDisplay ────────────────────────────
-    if not price:
-        for aid in ["apex_desktop", "apex_offerDisplay_desktop_feature_div"]:
-            apex = soup.find("div", {"id": aid})
-            if not apex:
-                continue
-            for block in apex.find_all("span", {"class": "a-price"}):
-                p = _extract_price_from_block(block)
-                if p:
-                    price = p
-                    break
-            if price:
-                break
-
-    # ── Method 4: buybox price span (id-based) ───────────────────────────────
-    if not price:
-        buybox = soup.find("div", {"id": "buyBoxInner"}) or \
-                 soup.find("div", {"id": "rightCol"}) or \
-                 soup.find("div", {"id": "ppd"})
-        if buybox:
-            for block in buybox.find_all("span", {"class": "a-price"}):
-                p = _extract_price_from_block(block)
-                if p:
-                    price = p
-                    break
-
-    # ── Method 5: all a-price blocks on page, skip strikethrough ─────────────
-    if not price:
-        for block in soup.find_all("span", {"class": "a-price"}):
-            p = _extract_price_from_block(block)
-            if p:
-                price = p
-                break
-
-    # ── Method 6: legacy priceblock IDs ──────────────────────────────────────
-    if not price:
-        for pid in [
-            "priceblock_ourprice",
-            "priceblock_dealprice",
-            "priceblock_saleprice",
-            "priceblock_snsprice_Based",
-        ]:
-            tag = soup.find("span", {"id": pid})
-            if tag:
-                p = clean_price(tag.get_text())
-                if p:
-                    price = p
-                    break
-
-    # ── Method 7: raw whole+fraction anywhere ─────────────────────────────────
-    if not price:
-        whole = soup.find("span", {"class": "a-price-whole"})
-        frac  = soup.find("span", {"class": "a-price-fraction"})
-        if whole:
-            w = re.sub(r"[^\d]", "", whole.get_text())
-            f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
-            if w:
-                try:
-                    price = clean_price(f"{w}.{f}")
-                except Exception:
-                    pass
-
-    return price
 
 
 def parse(html, asin, domain):
@@ -364,21 +212,72 @@ def parse(html, asin, domain):
     except Exception:
         pass
 
-    # ── Price ─────────────────────────────────────────────────────────────────
+    # ── Price (sale price only, skip MRP/strikethrough) ───────────────────────
     price = None
     try:
-        price = parse_price(soup)
+        core = (
+            soup.find("div", {"id": "corePriceDisplay_desktop_feature_div"}) or
+            soup.find("div", {"id": "corePrice_desktop"}) or
+            soup.find("div", {"id": "apex_desktop"})
+        )
+        if core:
+            for block in core.find_all("span", {"class": "a-price"}):
+                cls = " ".join(block.get("class", []))
+                if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
+                    continue
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    p = clean_price(off.get_text())
+                    if p:
+                        price = p
+                        break
+
+        if not price:
+            for block in soup.find_all("span", {"class": "a-price"}):
+                cls = " ".join(block.get("class", []))
+                if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
+                    continue
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    p = clean_price(off.get_text())
+                    if p:
+                        price = p
+                        break
+
+        if not price:
+            whole = soup.find("span", {"class": "a-price-whole"})
+            frac  = soup.find("span", {"class": "a-price-fraction"})
+            if whole:
+                w = re.sub(r"[^\d]", "", whole.get_text())
+                f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
+                try:
+                    price = float(f"{w}.{f}") if w else None
+                except Exception:
+                    pass
+
+        if not price:
+            for pid in ["priceblock_ourprice", "priceblock_dealprice", "priceblock_saleprice"]:
+                tag = soup.find("span", {"id": pid})
+                if tag:
+                    p = clean_price(tag.get_text())
+                    if p:
+                        price = p
+                        break
+
     except Exception:
         pass
+
+    if price and price > 500000:
+        price = None
 
     # ── Availability ──────────────────────────────────────────────────────────
     availability = detect_availability(soup, price)
 
-    # Nullify price if product is not purchasable
+    # Nullify price for unavailable/OOS products to avoid leaking MRP from DOM
     if availability in (AVAIL_CURRENTLY_UNAVAIL, AVAIL_TEMP_OOS, AVAIL_OUT_OF_STOCK):
         price = None
 
-    # ── Rating score ──────────────────────────────────────────────────────────
+    # ── Rating (score) ────────────────────────────────────────────────────────
     rating = None
     try:
         tag = soup.find("span", {"class": "a-icon-alt"})
@@ -398,14 +297,14 @@ def parse(html, asin, domain):
     # ── Rating count ──────────────────────────────────────────────────────────
     rating_count = None
     try:
-        # Method 1: standard id
+        # Method 1: #acrCustomerReviewText  e.g. "154 ratings"
         tag = soup.find("span", {"id": "acrCustomerReviewText"})
         if tag:
             m = re.search(r"([\d,]+)", tag.get_text())
             if m:
                 rating_count = int(m.group(1).replace(",", ""))
 
-        # Method 2: review link
+        # Method 2: link text next to star widget  e.g. "(27)"  or  "27 ratings"
         if not rating_count:
             tag = soup.find("a", {"id": "acrCustomerReviewLink"})
             if tag:
@@ -413,7 +312,7 @@ def parse(html, asin, domain):
                 if m:
                     rating_count = int(m.group(1).replace(",", ""))
 
-        # Method 3: data-hook
+        # Method 3: data-hook attribute used by newer Amazon pages
         if not rating_count:
             tag = soup.find(attrs={"data-hook": "total-review-count"})
             if tag:
@@ -421,7 +320,7 @@ def parse(html, asin, domain):
                 if m:
                     rating_count = int(m.group(1).replace(",", ""))
 
-        # Method 4: generic scan
+        # Method 4: generic scan — find span near star widget containing "rating"
         if not rating_count:
             for span in soup.find_all("span"):
                 txt = span.get_text(strip=True)
@@ -430,6 +329,7 @@ def parse(html, asin, domain):
                     if m:
                         rating_count = int(m.group(1).replace(",", ""))
                         break
+
     except Exception:
         pass
 
