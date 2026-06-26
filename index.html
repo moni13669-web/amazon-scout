@@ -3,254 +3,555 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Amazon Price Scout</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-  <!-- SheetJS for reading Excel/CSV uploads and writing Excel reports -->
+  <title>Scoutly — Amazon Product Lookup</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     :root {
-      --bg:      #0d0f14; --surface: #151820; --surface2: #1c1f2b;
-      --surface3: #232737; --border: #2a2e40; --border2: #353a52;
-      --accent:  #f5a623; --accent2: #e8951a;
-      --green:   #22c55e; --red: #ef4444; --yellow: #eab308;
-      --text:    #f0f2f8; --text2: #9ca3c4; --text3: #5c6285;
-      --mono:    'JetBrains Mono', monospace; --sans: 'Inter', sans-serif;
-      --r: 12px; --rs: 7px;
+      --bg0: #0a0b0f;
+      --bg1: #0f1118;
+      --bg2: #14161e;
+      --glass: rgba(255,255,255,0.04);
+      --glass-hover: rgba(255,255,255,0.07);
+      --glass-border: rgba(255,255,255,0.08);
+      --glass-border-hover: rgba(255,255,255,0.15);
+      --accent: #6c8fff;
+      --accent-dim: rgba(108,143,255,0.15);
+      --accent-glow: rgba(108,143,255,0.08);
+      --green: #34d399;
+      --green-dim: rgba(52,211,153,0.12);
+      --red: #f87171;
+      --red-dim: rgba(248,113,113,0.12);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251,191,36,0.12);
+      --text: #f0f2f8;
+      --text2: rgba(240,242,248,0.55);
+      --text3: rgba(240,242,248,0.28);
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', sans-serif;
+      --r: 16px;
+      --rs: 10px;
+      --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
     }
-    body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; display: flex; flex-direction: column; }
+
+    body {
+      background: var(--bg0);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* subtle mesh background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 0%, rgba(108,143,255,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(52,211,153,0.04) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
 
     /* ── Header ── */
-    header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; background: var(--surface); }
-    .logo { width: 34px; height: 34px; background: var(--accent); border-radius: 8px; display: grid; place-items: center; font-size: 16px; }
-    .logo-text { font-size: 16px; font-weight: 700; }
-    .logo-sub  { font-size: 11px; color: var(--text3); margin-top: 1px; }
-    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-    .domain-sel { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); font-family: var(--mono); font-size: 12px; padding: 6px 10px; border-radius: var(--rs); outline: none; cursor: pointer; }
-    .domain-sel:focus { border-color: var(--accent); }
+    header {
+      position: relative; z-index: 10;
+      padding: 0 2rem;
+      height: 56px;
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(10,11,15,0.8);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .logo-mark {
+      width: 30px; height: 30px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #6c8fff 0%, #a78bfa 100%);
+      display: grid; place-items: center;
+      font-size: 14px; font-weight: 600; color: #fff;
+      letter-spacing: -0.5px;
+      flex-shrink: 0;
+    }
+    .logo-name { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+    .logo-name span { color: var(--accent); }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .domain-pill {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      color: var(--text2);
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 5px 12px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color var(--transition), background var(--transition);
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='rgba(240,242,248,0.4)' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 26px;
+    }
+    .domain-pill:hover, .domain-pill:focus { border-color: var(--accent); background-color: var(--glass-hover); }
+    .domain-pill option { background: #1a1d2e; }
+
+    /* ── Layout ── */
+    main {
+      position: relative; z-index: 1;
+      flex: 1;
+      max-width: 780px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 2.5rem 1.5rem 5rem;
+    }
 
     /* ── Tabs ── */
-    main { flex: 1; max-width: 900px; margin: 0 auto; width: 100%; padding: 2rem 1.5rem 4rem; }
-    .tabs { display: flex; gap: 4px; margin-bottom: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 4px; }
-    .tab { flex: 1; text-align: center; padding: 8px 16px; border-radius: 9px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text3); transition: all 0.15s; border: none; background: none; }
-    .tab.active { background: var(--surface3); color: var(--text); border: 1px solid var(--border2); }
+    .tab-bar {
+      display: flex;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      padding: 3px;
+      margin-bottom: 2.5rem;
+      width: fit-content;
+    }
+    .tab {
+      padding: 7px 20px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--text3);
+      transition: all var(--transition);
+      border: none;
+      background: none;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+    .tab.active {
+      background: rgba(255,255,255,0.09);
+      color: var(--text);
+      border: 1px solid var(--glass-border-hover);
+    }
     .tab:hover:not(.active) { color: var(--text2); }
     .panel { display: none; }
     .panel.active { display: block; }
 
-    /* ── Single lookup ── */
-    .hero { text-align: center; margin-bottom: 2rem; }
-    .hero h2 { font-size: 26px; font-weight: 700; }
-    .hero h2 span { color: var(--accent); }
-    .hero p { color: var(--text2); font-size: 13px; margin-top: 6px; }
+    /* ── Glass card ── */
+    .glass-card {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--r);
+      backdrop-filter: blur(12px);
+      transition: border-color var(--transition);
+    }
+    .glass-card:hover { border-color: var(--glass-border-hover); }
 
-    .search-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 1.1rem; margin-bottom: 1.25rem; }
+    /* ── Single panel hero ── */
+    .hero { margin-bottom: 2rem; }
+    .hero h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; line-height: 1.2; }
+    .hero h1 span { color: var(--accent); }
+    .hero p { color: var(--text3); font-size: 13px; margin-top: 6px; }
+
+    /* ── Search ── */
+    .search-wrap {
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
     .search-row { display: flex; gap: 8px; }
-    .search-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--rs); color: var(--text); font-family: var(--mono); font-size: 15px; padding: 11px 14px; letter-spacing: 0.06em; outline: none; transition: border-color 0.15s; }
-    .search-input::placeholder { color: var(--text3); }
-    .search-input:focus { border-color: var(--accent); }
-    .fetch-btn { background: var(--accent); border: none; border-radius: var(--rs); color: #0d0f14; font-family: var(--sans); font-size: 13px; font-weight: 700; padding: 11px 20px; cursor: pointer; white-space: nowrap; transition: background 0.12s, transform 0.1s; display: flex; align-items: center; gap: 6px; }
-    .fetch-btn:hover { background: var(--accent2); }
+    .asin-input {
+      flex: 1;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--rs);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color var(--transition), background var(--transition);
+    }
+    .asin-input::placeholder { color: var(--text3); }
+    .asin-input:focus {
+      border-color: var(--accent);
+      background: rgba(108,143,255,0.04);
+    }
+    .fetch-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: var(--rs);
+      color: #fff;
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 10px 20px;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+      transition: opacity var(--transition), transform var(--transition);
+      white-space: nowrap;
+      letter-spacing: 0.01em;
+    }
+    .fetch-btn:hover { opacity: 0.88; }
     .fetch-btn:active { transform: scale(0.97); }
-    .fetch-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .fetch-btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
     .chip-label { font-size: 11px; color: var(--text3); }
-    .chip { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border: 1px solid var(--border2); border-radius: 999px; cursor: pointer; color: var(--text2); background: var(--surface2); transition: border-color 0.1s, color 0.1s; }
-    .chip:hover { border-color: var(--accent); color: var(--accent); }
+    .chip {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 3px 10px;
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      cursor: pointer;
+      color: var(--text3);
+      background: transparent;
+      transition: all var(--transition);
+    }
+    .chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 
-    .loader { display: none; flex-direction: column; align-items: center; gap: 12px; padding: 2.5rem 0; }
-    .loader.show { display: flex; }
-    .ring { width: 38px; height: 38px; border: 3px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    /* ── Loader ── */
+    .loader { display: none; padding: 3rem 0; text-align: center; }
+    .loader.show { display: block; }
+    .spin-ring {
+      width: 32px; height: 32px;
+      border: 2px solid var(--glass-border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin: 0 auto 12px;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
     .loader-msg { color: var(--text2); font-size: 13px; }
-    .loader-attempt { color: var(--text3); font-size: 11px; font-family: var(--mono); }
+    .loader-sub { color: var(--text3); font-size: 11px; font-family: var(--mono); margin-top: 4px; }
 
-    .error-box { display: none; background: #1e1212; border: 1px solid #5a1d1d; border-radius: var(--r); padding: 0.9rem 1.1rem; color: var(--red); font-size: 13px; gap: 8px; align-items: center; margin-bottom: 1rem; }
-    .error-box.show { display: flex; }
+    /* ── Error ── */
+    .err-box {
+      display: none;
+      background: var(--red-dim);
+      border: 1px solid rgba(248,113,113,0.2);
+      border-radius: var(--rs);
+      padding: 10px 14px;
+      color: var(--red);
+      font-size: 13px;
+      margin-bottom: 1rem;
+    }
+    .err-box.show { display: block; }
 
+    /* ── Result card ── */
     .result { display: none; }
     .result.show { display: block; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 1.5rem; }
 
-    .badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; padding: 3px 10px; border-radius: 4px; margin-bottom: 12px; }
-    .badge-in  { background: #0f2e1a; color: var(--green);  border: 1px solid #1a4d2a; }
-    .badge-out { background: #2e0f0f; color: var(--red);    border: 1px solid #4d1a1a; }
-    .badge-low { background: #2e2310; color: var(--yellow); border: 1px solid #4d3a18; }
-    .badge-unk { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
-
-    .product-title { font-size: 15px; font-weight: 600; line-height: 1.45; color: var(--text); margin-bottom: 1.25rem; }
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1.25rem; }
-    .stat { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--rs); padding: 0.85rem 1rem; }
-    .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text3); margin-bottom: 5px; }
-    .stat-value { font-size: 22px; font-weight: 700; color: var(--text); font-family: var(--mono); }
-    .stat-value.price-val { color: var(--accent); }
-    .stat-value.rating-val { color: var(--yellow); font-size: 16px; }
-    .stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
-    .card-footer { border-top: 1px solid var(--border); padding-top: 0.9rem; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-    .asin-mono { font-family: var(--mono); font-size: 11px; color: var(--text3); }
-    .asin-mono span { color: var(--text2); }
-    .footer-btns { display: flex; gap: 8px; }
-    .btn-sec { background: var(--surface3); border: 1px solid var(--border2); color: var(--text2); font-size: 11px; font-weight: 500; padding: 6px 12px; border-radius: var(--rs); cursor: pointer; transition: background 0.1s; display: flex; align-items: center; gap: 5px; }
-    .btn-sec:hover { background: var(--border2); color: var(--text); }
-    .btn-amz { background: var(--accent); border: none; color: #0d0f14; font-size: 11px; font-weight: 700; padding: 6px 14px; border-radius: var(--rs); cursor: pointer; }
-    .btn-amz:hover { background: var(--accent2); }
-    .history { margin-top: 1.25rem; }
-    .section-title { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-    .history-box { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--rs); padding: 0.75rem 1rem; font-size: 12px; color: var(--text3); line-height: 1.8; font-family: var(--mono); white-space: pre-wrap; }
-
-    /* ── Bulk upload panel ── */
-    .upload-zone {
-      border: 2px dashed var(--border2); border-radius: var(--r);
-      padding: 3rem 2rem; text-align: center; cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-      background: var(--surface); margin-bottom: 1.25rem;
+    .avail-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 3px 10px;
+      border-radius: 999px; margin-bottom: 14px;
     }
-    .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: #1a1c25; }
-    .upload-zone input { display: none; }
-    .upload-icon { font-size: 40px; margin-bottom: 12px; }
-    .upload-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
-    .upload-sub { font-size: 12px; color: var(--text3); }
-    .upload-sub span { color: var(--accent); text-decoration: underline; cursor: pointer; }
+    .avail-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .badge-in  { background: var(--green-dim); color: var(--green); }
+    .badge-out { background: var(--red-dim); color: var(--red); }
+    .badge-low { background: var(--amber-dim); color: var(--amber); }
+    .badge-unk { background: var(--glass); color: var(--text3); }
 
-    .file-info { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 1rem 1.25rem; margin-bottom: 1rem; display: none; align-items: center; gap: 12px; }
-    .file-info.show { display: flex; }
-    .file-icon { font-size: 24px; }
-    .file-details { flex: 1; }
-    .file-name { font-size: 13px; font-weight: 600; color: var(--text); }
+    .product-title {
+      font-size: 15px; font-weight: 500; line-height: 1.5;
+      color: var(--text); margin-bottom: 1.25rem;
+    }
+
+    .stat-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 8px; margin-bottom: 1.25rem;
+    }
+    .stat-cell {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--rs);
+      padding: 14px;
+    }
+    .stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text3); margin-bottom: 6px; }
+    .stat-val { font-size: 20px; font-weight: 600; font-family: var(--mono); color: var(--text); letter-spacing: -0.5px; }
+    .stat-val.is-price { color: var(--accent); }
+    .stat-val.is-rating { color: var(--amber); font-size: 15px; }
+    .stat-sub { font-size: 11px; color: var(--text3); margin-top: 3px; }
+
+    .card-footer {
+      border-top: 1px solid var(--glass-border);
+      padding-top: 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 10px;
+    }
+    .asin-tag { font-family: var(--mono); font-size: 10px; color: var(--text3); }
+    .asin-tag span { color: var(--text2); }
+    .footer-btns { display: flex; gap: 6px; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--glass-border);
+      color: var(--text3);
+      font-size: 11px; font-weight: 500;
+      padding: 6px 12px; border-radius: var(--rs);
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .btn-ghost:hover { border-color: var(--glass-border-hover); color: var(--text); background: var(--glass-hover); }
+    .btn-amz {
+      background: var(--accent-dim);
+      border: 1px solid rgba(108,143,255,0.25);
+      color: var(--accent);
+      font-size: 11px; font-weight: 500;
+      padding: 6px 14px; border-radius: var(--rs);
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .btn-amz:hover { background: rgba(108,143,255,0.22); }
+
+    /* history */
+    .history { margin-top: 1.25rem; }
+    .section-label {
+      font-size: 10px; font-weight: 600; color: var(--text3);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
+    .history-box {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--rs);
+      padding: 12px 14px;
+      font-size: 11px; color: var(--text3);
+      font-family: var(--mono); line-height: 1.9;
+      white-space: pre-wrap;
+    }
+
+    /* ── Bulk panel ── */
+    .drop-zone {
+      border: 1px dashed var(--glass-border);
+      border-radius: var(--r);
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all var(--transition);
+      background: var(--glass);
+      margin-bottom: 1rem;
+    }
+    .drop-zone:hover, .drop-zone.drag {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+    }
+    .drop-zone input { display: none; }
+    .drop-icon { font-size: 32px; margin-bottom: 10px; }
+    .drop-title { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+    .drop-sub { font-size: 12px; color: var(--text3); }
+    .drop-sub span { color: var(--accent); }
+
+    .file-bar {
+      display: none;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--rs);
+      padding: 12px 16px;
+      margin-bottom: 1rem;
+      align-items: center; gap: 12px;
+    }
+    .file-bar.show { display: flex; }
+    .file-icon-big { font-size: 22px; }
+    .file-info { flex: 1; }
+    .file-name { font-size: 13px; font-weight: 500; color: var(--text); }
     .file-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
-    .file-clear { background: none; border: 1px solid var(--border2); color: var(--text3); font-size: 11px; padding: 4px 10px; border-radius: var(--rs); cursor: pointer; }
-    .file-clear:hover { color: var(--red); border-color: var(--red); }
+    .btn-clear {
+      background: none; border: 1px solid var(--glass-border);
+      color: var(--text3); font-size: 11px; padding: 4px 10px;
+      border-radius: var(--rs); cursor: pointer;
+      transition: all var(--transition);
+    }
+    .btn-clear:hover { color: var(--red); border-color: rgba(248,113,113,0.4); }
 
-    .bulk-btn { background: var(--accent); border: none; border-radius: var(--rs); color: #0d0f14; font-family: var(--sans); font-size: 14px; font-weight: 700; padding: 12px 24px; cursor: pointer; width: 100%; transition: background 0.12s; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 1.25rem; }
-    .bulk-btn:hover { background: var(--accent2); }
-    .bulk-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .bulk-run-btn {
+      width: 100%;
+      background: var(--accent);
+      border: none; border-radius: var(--rs);
+      color: #fff;
+      font-family: var(--sans); font-size: 14px; font-weight: 500;
+      padding: 12px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+      margin-bottom: 1rem;
+      transition: opacity var(--transition);
+    }
+    .bulk-run-btn:hover { opacity: 0.88; }
+    .bulk-run-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-    /* Progress */
-    .progress-wrap { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 1.25rem; margin-bottom: 1.25rem; }
+    /* progress */
+    .progress-wrap {
+      display: none;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--rs);
+      padding: 1.1rem 1.25rem;
+      margin-bottom: 1rem;
+    }
     .progress-wrap.show { display: block; }
-    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .progress-label { font-size: 13px; font-weight: 600; color: var(--text); }
-    .progress-count { font-size: 12px; color: var(--text2); font-family: var(--mono); }
-    .progress-bar-bg { background: var(--surface3); border-radius: 999px; height: 6px; overflow: hidden; margin-bottom: 10px; }
-    .progress-bar { height: 100%; background: var(--accent); border-radius: 999px; width: 0%; transition: width 0.3s; }
-    .progress-current { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+    .progress-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .progress-lbl { font-size: 12px; font-weight: 500; color: var(--text); }
+    .progress-cnt { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+    .progress-track {
+      height: 3px; background: var(--glass-border);
+      border-radius: 999px; overflow: hidden; margin-bottom: 8px;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+    .progress-note { font-size: 11px; color: var(--text3); font-family: var(--mono); }
 
-    /* Results table */
+    /* results table */
     .bulk-results { display: none; }
     .bulk-results.show { display: block; }
-    .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
-    .results-title { font-size: 14px; font-weight: 600; color: var(--text); }
-    .results-meta { font-size: 12px; color: var(--text3); }
-    .download-btns { display: flex; gap: 8px; }
-    .dl-btn { padding: 7px 14px; border-radius: var(--rs); font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; border: none; transition: background 0.12s; }
-    .dl-csv { background: var(--surface3); border: 1px solid var(--border2); color: var(--text2); }
-    .dl-csv:hover { background: var(--border2); color: var(--text); }
-    .dl-xlsx { background: var(--accent); color: #0d0f14; }
-    .dl-xlsx:hover { background: var(--accent2); }
+    .results-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; flex-wrap: wrap; gap: 10px;
+    }
+    .results-ttl { font-size: 14px; font-weight: 600; color: var(--text); }
+    .results-meta-txt { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .dl-row { display: flex; gap: 6px; }
+    .dl-btn {
+      padding: 7px 13px; border-radius: var(--rs);
+      font-size: 11px; font-weight: 500; cursor: pointer;
+      display: flex; align-items: center; gap: 5px;
+      transition: all var(--transition);
+    }
+    .dl-csv {
+      background: var(--glass); border: 1px solid var(--glass-border);
+      color: var(--text2);
+    }
+    .dl-csv:hover { border-color: var(--glass-border-hover); color: var(--text); }
+    .dl-xlsx {
+      background: var(--accent-dim); border: 1px solid rgba(108,143,255,0.25);
+      color: var(--accent);
+    }
+    .dl-xlsx:hover { background: rgba(108,143,255,0.22); }
 
-    .more-note { font-size: 11px; color: var(--text3); background: var(--surface2); border: 1px solid var(--border); border-radius: var(--rs); padding: 8px 12px; margin-bottom: 12px; display: none; }
+    .more-note {
+      font-size: 11px; color: var(--text3);
+      background: var(--glass); border: 1px solid var(--glass-border);
+      border-radius: var(--rs); padding: 8px 12px; margin-bottom: 10px;
+      display: none;
+    }
     .more-note.show { display: block; }
 
+    .table-wrap {
+      border: 1px solid var(--glass-border);
+      border-radius: var(--r); overflow: hidden; overflow-x: auto;
+    }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    thead th { background: var(--surface2); color: var(--text3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
-    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
-    tbody tr:hover { background: var(--surface2); }
+    thead th {
+      background: rgba(255,255,255,0.03);
+      color: var(--text3); font-size: 10px;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      padding: 9px 12px; text-align: left;
+      border-bottom: 1px solid var(--glass-border);
+      white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); transition: background var(--transition); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--glass-hover); }
     tbody td { padding: 10px 12px; color: var(--text2); vertical-align: middle; }
-    tbody td.asin-cell { font-family: var(--mono); color: var(--text); font-size: 11px; }
-    tbody td.title-cell { color: var(--text); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    tbody td.price-cell { color: var(--accent); font-family: var(--mono); font-weight: 600; }
-    tbody td.rating-cell { color: var(--yellow); }
-    .tbl-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; }
-    .tbl-in  { background: #0f2e1a; color: var(--green);  }
-    .tbl-out { background: #2e0f0f; color: var(--red);    }
-    .tbl-low { background: #2e2310; color: var(--yellow); }
-    .tbl-unk { background: var(--surface3); color: var(--text3); }
-    .tbl-err      { background: #2e1a0f; color: #e8782a; }
-    .tbl-retrying { background: #1a1a2e; color: #7c8bff; animation: pulse 1.2s ease-in-out infinite; }
-    .tbl-notfound { background: #2a1f0a; color: #c97b2a; border: 1px solid #5a3a0a; }
-    .tbl-pending  { background: var(--surface3); color: var(--text3); }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-    .table-wrap { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; overflow-x: auto; }
+    td.td-asin { font-family: var(--mono); color: var(--text); font-size: 11px; }
+    td.td-title { color: var(--text); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    td.td-price { color: var(--accent); font-family: var(--mono); font-weight: 600; }
+    td.td-rating { color: var(--amber); }
+    td.td-count { color: var(--text3); font-size: 11px; }
 
-    footer { padding: 1rem 2rem; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text3); }
+    .tbl-badge {
+      display: inline-block; font-size: 9px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 999px;
+    }
+    .tbl-in  { background: var(--green-dim); color: var(--green); }
+    .tbl-out { background: var(--red-dim); color: var(--red); }
+    .tbl-low { background: var(--amber-dim); color: var(--amber); }
+    .tbl-unk { background: var(--glass); color: var(--text3); }
+    .tbl-err { background: rgba(251,146,60,0.12); color: #fb923c; }
+    .tbl-retrying { background: var(--accent-dim); color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+    .tbl-notfound { background: rgba(251,191,36,0.1); color: var(--amber); }
+    .tbl-pending  { background: var(--glass); color: var(--text3); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+
+    /* format guide */
+    .fmt-guide {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--r);
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    .fmt-guide-hd {
+      padding: 10px 14px;
+      font-size: 12px; font-weight: 500; color: var(--text2);
+      border-bottom: 1px solid var(--glass-border);
+      background: rgba(255,255,255,0.02);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .fmt-guide-body { padding: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    @media (max-width: 560px) { .fmt-guide-body { grid-template-columns: 1fr; } }
+    .fmt-rules { display: flex; flex-direction: column; gap: 8px; }
+    .fmt-rule { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--text2); line-height: 1.5; }
+    .rule-dot {
+      flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
+      display: grid; place-items: center; font-size: 9px; font-weight: 700; margin-top: 1px;
+    }
+    .rule-ok { background: var(--green-dim); color: var(--green); }
+    .rule-no { background: var(--red-dim); color: var(--red); }
+    .fmt-rule code {
+      font-family: var(--mono); font-size: 10px;
+      background: rgba(108,143,255,0.1); color: var(--accent);
+      padding: 1px 5px; border-radius: 4px;
+    }
+    .fmt-preview { font-size: 11px; }
+    .preview-lbl { font-size: 11px; font-weight: 500; color: var(--text2); margin-bottom: 6px; }
+    .preview-sheet { border: 1px solid var(--glass-border); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.02); }
+    .sheet-hd, .sheet-row { display: flex; border-bottom: 1px solid var(--glass-border); }
+    .sheet-row:last-child { border-bottom: none; }
+    .sheet-cell { padding: 5px 8px; font-family: var(--mono); font-size: 10px; border-right: 1px solid var(--glass-border); }
+    .sheet-cell:last-child { border-right: none; }
+    .col-a { min-width: 110px; }
+    .col-b { flex: 1; }
+    .cell-hd { font-weight: 700; background: rgba(255,255,255,0.03); color: var(--text3); }
+    .cell-asin { color: var(--accent); }
+    .cell-other { color: var(--text3); }
+    .cell-wrong { color: var(--red); opacity: 0.7; }
+    .hd-wrong { color: var(--red) !important; }
+
+    footer {
+      position: relative; z-index: 1;
+      padding: 1rem 2rem;
+      border-top: 1px solid var(--glass-border);
+      text-align: center;
+      font-size: 11px; color: var(--text3);
+    }
 
     @media (max-width: 600px) {
-      .stats { grid-template-columns: 1fr 1fr; }
-      main { padding: 1.5rem 1rem 3rem; }
-      header { padding: 1rem; }
+      .stat-grid { grid-template-columns: 1fr 1fr; }
+      main { padding: 1.5rem 1rem 4rem; }
+      header { padding: 0 1rem; }
+      .fetch-btn span { display: none; }
     }
-
-    /* ── File format guide ── */
-    .format-guide {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); margin-bottom: 1.25rem; overflow: hidden;
-    }
-    .format-guide-title {
-      padding: 0.75rem 1.1rem; font-size: 13px; font-weight: 600;
-      color: var(--text2); border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 8px;
-      background: var(--surface2);
-    }
-    .format-guide-body {
-      padding: 1.1rem; display: grid;
-      grid-template-columns: 1fr 1fr; gap: 1.25rem;
-    }
-    @media (max-width: 640px) { .format-guide-body { grid-template-columns: 1fr; } }
-    .format-rules { display: flex; flex-direction: column; gap: 9px; }
-    .format-rule {
-      display: flex; align-items: flex-start; gap: 8px;
-      font-size: 12px; color: var(--text2); line-height: 1.5;
-    }
-    .rule-icon {
-      flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
-      display: grid; place-items: center; font-size: 10px; font-weight: 700; margin-top: 1px;
-    }
-    .rule-ok  { background: #0f2e1a; color: var(--green); border: 1px solid #1a4d2a; }
-    .rule-no  { background: #2e0f0f; color: var(--red);   border: 1px solid #4d1a1a; }
-    .format-rule code {
-      font-family: var(--mono); font-size: 11px; background: var(--surface3);
-      padding: 1px 6px; border-radius: 4px; color: var(--accent);
-      border: 1px solid var(--border2);
-    }
-    /* Spreadsheet preview */
-    .format-preview { font-size: 11px; }
-    .preview-label { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
-    .preview-sheet {
-      border: 1px solid var(--border2); border-radius: 6px; overflow: hidden;
-      background: var(--surface2);
-    }
-    .preview-wrong { opacity: 0.8; }
-    .sheet-header, .sheet-row {
-      display: flex; border-bottom: 1px solid var(--border);
-    }
-    .sheet-row:last-child { border-bottom: none; }
-    .sheet-more { opacity: 0.4; }
-    .sheet-cell {
-      padding: 5px 8px; font-family: var(--mono);
-      font-size: 10px; border-right: 1px solid var(--border);
-    }
-    .sheet-cell:last-child { border-right: none; }
-    .sheet-col-a { min-width: 110px; }
-    .sheet-col-b { flex: 1; }
-    .header-cell  { font-weight: 700; background: var(--surface3); color: var(--text2); font-family: var(--sans); font-size: 10px; }
-    .asin-cell-pre { color: var(--accent); }
-    .other-cell   { color: var(--text3); font-family: var(--sans); }
-    .wrong-header { color: var(--red) !important; }
-    .wrong-cell   { color: var(--red); opacity: 0.7; }
-
   </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">🔍</div>
-  <div>
-    <div class="logo-text">Price Scout</div>
-    <div class="logo-sub">Amazon Product Lookup</div>
-  </div>
+  <div class="logo-mark">S</div>
+  <div class="logo-name">Scout<span>ly</span></div>
   <div class="header-right">
-    <select class="domain-sel" id="domain">
+    <select class="domain-pill" id="domain">
       <option value="amazon.in">🇮🇳 amazon.in</option>
       <option value="amazon.com">🇺🇸 amazon.com</option>
       <option value="amazon.co.uk">🇬🇧 amazon.co.uk</option>
@@ -260,25 +561,24 @@
 </header>
 
 <main>
-  <!-- Tabs -->
-  <div class="tabs">
-    <button class="tab active" onclick="switchTab('single')">Single ASIN Lookup</button>
-    <button class="tab" onclick="switchTab('bulk')">Bulk Upload (Excel / CSV)</button>
+  <div class="tab-bar">
+    <button class="tab active" onclick="switchTab('single')">Single lookup</button>
+    <button class="tab" onclick="switchTab('bulk')">Bulk upload</button>
   </div>
 
-  <!-- ══ SINGLE PANEL ══════════════════════════════════════════ -->
+  <!-- ══ SINGLE ══ -->
   <div class="panel active" id="panel-single">
     <div class="hero">
-      <h2>Amazon <span>Price Scout</span></h2>
-      <p>Enter an ASIN to get live title, price & rating</p>
+      <h1>Amazon <span>product</span> lookup</h1>
+      <p>Enter an ASIN to get live title, price, rating &amp; availability</p>
     </div>
 
-    <div class="search-box">
+    <div class="glass-card search-wrap">
       <div class="search-row">
-        <input class="search-input" id="asin" type="text" placeholder="e.g. B0FY66N9RX" maxlength="10" autocomplete="off" spellcheck="false"/>
+        <input class="asin-input" id="asin" type="text" placeholder="B0FY66N9RX" maxlength="10" autocomplete="off" spellcheck="false"/>
         <button class="fetch-btn" id="fetchBtn" onclick="run()">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          Fetch
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <span>Fetch</span>
         </button>
       </div>
       <div class="chips">
@@ -290,192 +590,139 @@
       </div>
     </div>
 
-    <div class="error-box" id="errBox"><span>⚠️</span><span id="errMsg"></span></div>
+    <div class="err-box" id="errBox" id="errBox"></div>
 
     <div class="loader" id="loader">
-      <div class="ring"></div>
+      <div class="spin-ring"></div>
       <div class="loader-msg">Fetching from Amazon…</div>
-      <div class="loader-attempt" id="attemptMsg">Connecting…</div>
+      <div class="loader-sub" id="attemptMsg">Connecting…</div>
     </div>
 
     <div class="result" id="result">
-      <div class="card">
-        <div id="badge" class="badge badge-unk">Unknown</div>
+      <div class="glass-card" style="padding:1.4rem">
+        <div class="avail-badge badge-unk" id="badge">Unknown</div>
         <div class="product-title" id="title">—</div>
-        <div class="stats">
-          <div class="stat">
-            <div class="stat-label">Current Price</div>
-            <div class="stat-value price-val" id="price">—</div>
+        <div class="stat-grid">
+          <div class="stat-cell">
+            <div class="stat-lbl">Price</div>
+            <div class="stat-val is-price" id="price">—</div>
             <div class="stat-sub" id="currency">INR</div>
           </div>
-          <div class="stat">
-            <div class="stat-label">Rating</div>
-            <div class="stat-value rating-val" id="rating">—</div>
-            <div class="stat-sub">out of 5 &nbsp;·&nbsp; <span id="ratingCount">— ratings</span></div>
+          <div class="stat-cell">
+            <div class="stat-lbl">Rating</div>
+            <div class="stat-val is-rating" id="rating">—</div>
+            <div class="stat-sub"><span id="ratingCount">— ratings</span></div>
           </div>
-          <div class="stat">
-            <div class="stat-label">Last Fetched</div>
-            <div class="stat-value" style="font-size:13px;color:var(--text2);" id="fetchedAt">—</div>
+          <div class="stat-cell">
+            <div class="stat-lbl">Fetched at</div>
+            <div class="stat-val" style="font-size:14px;color:var(--text2)" id="fetchedAt">—</div>
             <div class="stat-sub" id="fetchedDate">—</div>
           </div>
         </div>
         <div class="card-footer">
-          <div class="asin-mono">ASIN: <span id="asinDisplay">—</span></div>
+          <div class="asin-tag">ASIN: <span id="asinDisplay">—</span></div>
           <div class="footer-btns">
-            <button class="btn-sec" onclick="copyAsin()">Copy ASIN</button>
-            <button class="btn-sec" onclick="run()">↻ Refresh</button>
+            <button class="btn-ghost" onclick="copyAsin()">Copy ASIN</button>
+            <button class="btn-ghost" onclick="run()">↻ Refresh</button>
             <button class="btn-amz" onclick="openAmz()">View on Amazon ↗</button>
           </div>
         </div>
       </div>
       <div class="history">
-        <div class="section-title">Price History</div>
+        <div class="section-label">Price history</div>
         <div class="history-box" id="historyBox">No history yet for this ASIN.</div>
       </div>
     </div>
   </div>
 
-  <!-- ══ BULK PANEL ════════════════════════════════════════════ -->
+  <!-- ══ BULK ══ -->
   <div class="panel" id="panel-bulk">
     <div class="hero">
-      <h2>Bulk <span>ASIN Lookup</span></h2>
-      <p>Upload an Excel or CSV file — we'll fetch all products in parallel and generate a full report</p>
+      <h1>Bulk <span>ASIN</span> lookup</h1>
+      <p>Upload an Excel or CSV — we'll fetch all products and generate a full report</p>
     </div>
 
-    <!-- File format guide -->
-    <div class="format-guide">
-      <div class="format-guide-title">
-        <span>📋</span> How to format your file
+    <div class="fmt-guide">
+      <div class="fmt-guide-hd">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        File format
       </div>
-      <div class="format-guide-body">
-        <div class="format-rules">
-          <div class="format-rule">
-            <span class="rule-icon rule-ok">✓</span>
-            <span>Column header must be exactly <code>ASIN</code> (uppercase)</span>
-          </div>
-          <div class="format-rule">
-            <span class="rule-icon rule-ok">✓</span>
-            <span>All ASINs must be in a <strong>single column</strong> — one per row</span>
-          </div>
-          <div class="format-rule">
-            <span class="rule-icon rule-ok">✓</span>
-            <span>Each ASIN is exactly <strong>10 characters</strong> (letters and numbers)</span>
-          </div>
-          <div class="format-rule">
-            <span class="rule-icon rule-ok">✓</span>
-            <span>Accepts <strong>.xlsx</strong>, <strong>.xls</strong>, and <strong>.csv</strong> files</span>
-          </div>
-          <div class="format-rule">
-            <span class="rule-icon rule-no">✗</span>
-            <span>Do NOT split ASINs across multiple columns</span>
-          </div>
+      <div class="fmt-guide-body">
+        <div class="fmt-rules">
+          <div class="fmt-rule"><span class="rule-dot rule-ok">✓</span><span>Column header must be exactly <code>ASIN</code></span></div>
+          <div class="fmt-rule"><span class="rule-dot rule-ok">✓</span><span>One ASIN per row, single column</span></div>
+          <div class="fmt-rule"><span class="rule-dot rule-ok">✓</span><span>Each ASIN is exactly <strong>10 characters</strong></span></div>
+          <div class="fmt-rule"><span class="rule-dot rule-ok">✓</span><span>Accepts <strong>.xlsx</strong>, <strong>.xls</strong>, and <strong>.csv</strong></span></div>
+          <div class="fmt-rule"><span class="rule-dot rule-no">✗</span><span>Don't split ASINs across multiple columns</span></div>
         </div>
-
-        <!-- Visual preview of correct format -->
-        <div class="format-preview">
-          <div class="preview-label">✅ Correct format</div>
+        <div class="fmt-preview">
+          <div class="preview-lbl">✅ Correct</div>
           <div class="preview-sheet">
-            <div class="sheet-header">
-              <div class="sheet-cell sheet-col-a header-cell">ASIN</div>
-              <div class="sheet-cell sheet-col-b other-cell">Other columns OK</div>
-            </div>
-            <div class="sheet-row">
-              <div class="sheet-cell sheet-col-a asin-cell-pre">B0FY66N9RX</div>
-              <div class="sheet-cell sheet-col-b other-cell">Product name…</div>
-            </div>
-            <div class="sheet-row">
-              <div class="sheet-cell sheet-col-a asin-cell-pre">B0DGXWJLX4</div>
-              <div class="sheet-cell sheet-col-b other-cell">Category…</div>
-            </div>
-            <div class="sheet-row">
-              <div class="sheet-cell sheet-col-a asin-cell-pre">B09G9FPHY6</div>
-              <div class="sheet-cell sheet-col-b other-cell">Brand…</div>
-            </div>
-            <div class="sheet-row sheet-more">
-              <div class="sheet-cell sheet-col-a" style="color:var(--text3)">…</div>
-              <div class="sheet-cell sheet-col-b" style="color:var(--text3)">…</div>
-            </div>
+            <div class="sheet-hd"><div class="sheet-cell col-a cell-hd">ASIN</div><div class="sheet-cell col-b cell-hd">Other columns OK</div></div>
+            <div class="sheet-row"><div class="sheet-cell col-a cell-asin">B0FY66N9RX</div><div class="sheet-cell col-b cell-other">Product name…</div></div>
+            <div class="sheet-row"><div class="sheet-cell col-a cell-asin">B0DGXWJLX4</div><div class="sheet-cell col-b cell-other">Category…</div></div>
+            <div class="sheet-row" style="opacity:.4"><div class="sheet-cell col-a cell-other">…</div><div class="sheet-cell col-b cell-other">…</div></div>
           </div>
-
-          <div class="preview-label" style="margin-top:12px; color:var(--red)">❌ Wrong format</div>
-          <div class="preview-sheet preview-wrong">
-            <div class="sheet-header">
-              <div class="sheet-cell sheet-col-a header-cell wrong-header">asin</div>
-              <div class="sheet-cell sheet-col-b header-cell wrong-header">ASIN 2</div>
-              <div class="sheet-cell sheet-col-b header-cell wrong-header">ASIN 3</div>
-            </div>
-            <div class="sheet-row">
-              <div class="sheet-cell sheet-col-a wrong-cell">B0FY66N9RX</div>
-              <div class="sheet-cell sheet-col-b wrong-cell">B0DGXWJLX4</div>
-              <div class="sheet-cell sheet-col-b wrong-cell">B09G9FPHY6</div>
-            </div>
+          <div class="preview-lbl" style="margin-top:10px;color:var(--red)">❌ Wrong</div>
+          <div class="preview-sheet" style="opacity:.75">
+            <div class="sheet-hd"><div class="sheet-cell col-a cell-hd hd-wrong">asin</div><div class="sheet-cell col-b cell-hd hd-wrong">ASIN 2</div></div>
+            <div class="sheet-row"><div class="sheet-cell col-a cell-wrong">B0FY66N9RX</div><div class="sheet-cell col-b cell-wrong">B0DGXWJLX4</div></div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Drop zone -->
-    <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
       ondragover="event.preventDefault();this.classList.add('drag')"
       ondragleave="this.classList.remove('drag')"
       ondrop="handleDrop(event)">
       <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])"/>
-      <div class="upload-icon">📂</div>
-      <div class="upload-title">Drop your file here or <span>browse</span></div>
-      <div class="upload-sub">Supports .xlsx, .xls, .csv &nbsp;·&nbsp; Column must be named <strong>ASIN</strong></div>
+      <div class="drop-icon">📂</div>
+      <div class="drop-title">Drop file here or <span style="color:var(--accent)">browse</span></div>
+      <div class="drop-sub">Supports .xlsx, .xls, .csv · Column header must be <strong>ASIN</strong></div>
     </div>
 
-    <!-- File info -->
-    <div class="file-info" id="fileInfo">
-      <div class="file-icon" id="fileIcon">📊</div>
-      <div class="file-details">
+    <div class="file-bar" id="fileInfo">
+      <div class="file-icon-big" id="fileIcon">📊</div>
+      <div class="file-info">
         <div class="file-name" id="fileName">—</div>
         <div class="file-meta" id="fileMeta">—</div>
       </div>
-      <button class="file-clear" onclick="clearFile()">✕ Clear</button>
+      <button class="btn-clear" onclick="clearFile()">✕ Clear</button>
     </div>
 
-    <button class="bulk-btn" id="bulkBtn" onclick="startBulk()" disabled>
-      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      Fetch All ASINs
+    <button class="bulk-run-btn" id="bulkBtn" onclick="startBulk()" disabled>
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      Fetch all ASINs
     </button>
 
-    <!-- Progress -->
     <div class="progress-wrap" id="progressWrap">
-      <div class="progress-header">
-        <div class="progress-label" id="progressLabel">Fetching products…</div>
-        <div class="progress-count" id="progressCount">0 / 0</div>
+      <div class="progress-head">
+        <div class="progress-lbl" id="progressLabel">Fetching products…</div>
+        <div class="progress-cnt" id="progressCount">0 / 0</div>
       </div>
-      <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
-      <div class="progress-current" id="progressCurrent">Starting…</div>
+      <div class="progress-track"><div class="progress-fill" id="progressBar"></div></div>
+      <div class="progress-note" id="progressCurrent">Starting…</div>
     </div>
 
-    <!-- Results table -->
     <div class="bulk-results" id="bulkResults">
-      <div class="results-header">
+      <div class="results-head">
         <div>
-          <div class="results-title" id="resultsTitle">Results</div>
-          <div class="results-meta" id="resultsMeta"></div>
+          <div class="results-ttl" id="resultsTitle">Results</div>
+          <div class="results-meta-txt" id="resultsMeta"></div>
         </div>
-        <div class="download-btns">
-          <button class="dl-btn dl-csv" onclick="downloadCSV()">⬇ Download CSV</button>
-          <button class="dl-btn dl-xlsx" onclick="downloadXLSX()">⬇ Download Excel</button>
+        <div class="dl-row">
+          <button class="dl-btn dl-csv" onclick="downloadCSV()">↓ CSV</button>
+          <button class="dl-btn dl-xlsx" onclick="downloadXLSX()">↓ Excel</button>
         </div>
       </div>
-      <div class="more-note" id="moreNote">
-        📋 Showing first 10 results on screen. Download the report to see all data.
-      </div>
+      <div class="more-note" id="moreNote"></div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>#</th>
-              <th>ASIN</th>
-              <th>Title</th>
-              <th>Price</th>
-              <th>Rating</th>
-              <th>Ratings</th>
-              <th>Availability</th>
+              <th>#</th><th>ASIN</th><th>Title</th>
+              <th>Price</th><th>Rating</th><th>Reviews</th><th>Availability</th>
             </tr>
           </thead>
           <tbody id="bulkTableBody"></tbody>
@@ -485,24 +732,22 @@
   </div>
 </main>
 
-<footer>Price Scout · Single &amp; Bulk Amazon lookup · Deployed on Vercel</footer>
+<footer>Scoutly · Amazon product lookup · Built on Vercel</footer>
 
 <script>
 const API = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
-/* ══ Tab switching ══════════════════════════════════════════════════════════ */
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (tab === 'single' ? 0 : 1) === i));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById(`panel-${tab}`).classList.add('active');
 }
 
-/* ══ Single lookup ══════════════════════════════════════════════════════════ */
 let currentAsin = '', currentUrl = '', retryTimer = null;
 
 function saveHistory(asin, price) {
   if (!price) return;
-  const key = `ps_${asin}`;
+  const key = `sc_${asin}`;
   const arr = JSON.parse(localStorage.getItem(key) || '[]');
   arr.push({ price, ts: Date.now() });
   if (arr.length > 50) arr.splice(0, arr.length - 50);
@@ -510,7 +755,7 @@ function saveHistory(asin, price) {
 }
 
 function showHistory(asin) {
-  const arr = JSON.parse(localStorage.getItem(`ps_${asin}`) || '[]');
+  const arr = JSON.parse(localStorage.getItem(`sc_${asin}`) || '[]');
   const box = document.getElementById('historyBox');
   if (!arr.length) { box.textContent = 'No history yet for this ASIN.'; return; }
   const lines = arr.slice(-15).reverse().map(h => {
@@ -521,8 +766,9 @@ function showHistory(asin) {
 }
 
 function showErr(msg) {
-  document.getElementById('errMsg').textContent = msg;
-  document.getElementById('errBox').classList.add('show');
+  const eb = document.getElementById('errBox');
+  eb.textContent = msg;
+  eb.classList.add('show');
   document.getElementById('loader').classList.remove('show');
   document.getElementById('result').classList.remove('show');
   document.getElementById('fetchBtn').disabled = false;
@@ -544,14 +790,14 @@ function showResult() {
 function setBadge(status) {
   const el = document.getElementById('badge');
   const map = {
-    'In Stock':                ['badge-in',  'In Stock'],
-    'Low Stock':               ['badge-low', 'Low Stock'],
-    'Out of Stock':            ['badge-out', 'Out of Stock'],
-    'Currently Unavailable':   ['badge-out', 'Currently Unavailable'],
-    'Temporarily Out of Stock':['badge-low', 'Temporarily OOS'],
+    'In Stock':                 ['badge-in',  'In stock'],
+    'Low Stock':                ['badge-low', 'Low stock'],
+    'Out of Stock':             ['badge-out', 'Out of stock'],
+    'Currently Unavailable':    ['badge-out', 'Currently unavailable'],
+    'Temporarily Out of Stock': ['badge-low', 'Temporarily out of stock'],
   };
   const [cls, label] = map[status] || ['badge-unk', status || 'Unknown'];
-  el.className = `badge ${cls}`; el.textContent = label;
+  el.className = `avail-badge ${cls}`; el.textContent = label;
 }
 
 function renderProduct(d) {
@@ -585,37 +831,27 @@ async function fetchSingle(asin, domain) {
   const text = await res.text();
   if (!text || !text.trim()) throw new Error('Empty response');
   const data = JSON.parse(text);
-  // dead=true means product doesn't exist — throw special error to stop retrying
   if (data.dead) throw Object.assign(new Error(data.error), { dead: true });
   if (data.error) throw new Error(data.error);
   return data;
 }
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 async function runForever(asin, domain) {
-  // Retries forever until data arrives — stops only if product is confirmed dead
   let attempt = 0;
   while (singleRunning) {
     attempt++;
-
     if (attempt > 1) {
-      const base   = attempt <= 5  ? 600
-                   : attempt <= 15 ? 1200
-                   : 2500;
+      const base   = attempt <= 5  ? 600 : attempt <= 15 ? 1200 : 2500;
       const jitter = Math.random() * (attempt <= 5 ? 800 : attempt <= 15 ? 1500 : 2500);
       await sleep(base + jitter);
     }
-
     const msgEl = document.getElementById('attemptMsg');
-    if (attempt === 1) {
-      msgEl.textContent = 'Connecting to Amazon…';
-    } else if (attempt <= 5) {
-      msgEl.textContent = `Blocked — retrying… (attempt ${attempt})`;
-    } else if (attempt <= 15) {
-      msgEl.textContent = `Amazon is blocking — still retrying… (attempt ${attempt})`;
-    } else {
-      msgEl.textContent = `Persistent retry… attempt ${attempt} — please wait`;
-    }
-
+    if (attempt === 1)        msgEl.textContent = 'Connecting to Amazon…';
+    else if (attempt <= 5)    msgEl.textContent = `Blocked — retrying… (attempt ${attempt})`;
+    else if (attempt <= 15)   msgEl.textContent = `Amazon is blocking — still retrying… (attempt ${attempt})`;
+    else                      msgEl.textContent = `Persistent retry… attempt ${attempt}`;
     try {
       const data = await fetchSingle(asin, domain);
       if (!singleRunning) return;
@@ -623,34 +859,27 @@ async function runForever(asin, domain) {
       singleRunning = false;
       return;
     } catch(e) {
-      // If product confirmed dead — stop immediately, show error
       if (e.dead) {
         singleRunning = false;
-        showErr(`❌ Product not found — This ASIN does not exist on Amazon or has been delisted.`);
+        showErr('Product not found — this ASIN does not exist on Amazon or has been delisted.');
         return;
       }
-      // Otherwise keep retrying
     }
   }
 }
 
 function run() {
-  // Cancel any running fetch
   singleRunning = false;
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-
   const raw    = document.getElementById('asin').value.trim().toUpperCase();
   const domain = document.getElementById('domain').value;
   const match  = raw.match(/[A-Z0-9]{10}/);
   if (!match) { showErr('Please enter a valid 10-character ASIN'); return; }
-
   currentAsin = match[0];
   document.getElementById('asin').value = currentAsin;
   document.getElementById('fetchBtn').disabled = true;
   document.getElementById('errBox').classList.remove('show');
   showLoader();
-
-  // Start infinite retry loop
   singleRunning = true;
   runForever(currentAsin, domain);
 }
@@ -659,17 +888,15 @@ function go(asin) { document.getElementById('asin').value = asin; run(); }
 function openAmz() { if (currentUrl) window.open(currentUrl, '_blank'); }
 function copyAsin() {
   navigator.clipboard.writeText(currentAsin).then(() => {
-    const b = document.querySelectorAll('.btn-sec')[0];
+    const b = document.querySelectorAll('.btn-ghost')[0];
     const o = b.textContent; b.textContent = '✓ Copied';
     setTimeout(() => b.textContent = o, 1500);
   });
 }
 document.getElementById('asin').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
 
-/* ══ Bulk upload ════════════════════════════════════════════════════════════ */
-let uploadedAsins = [];
-let bulkResults   = [];
-let bulkRunning   = false;
+/* ══ Bulk ══ */
+let uploadedAsins = [], bulkResults = [], bulkRunning = false;
 
 function handleDrop(e) {
   e.preventDefault();
@@ -681,55 +908,32 @@ function handleDrop(e) {
 function handleFile(file) {
   if (!file) return;
   const ext = file.name.split('.').pop().toLowerCase();
-  if (!['xlsx','xls','csv'].includes(ext)) {
-    alert('Please upload a .xlsx, .xls, or .csv file');
-    return;
-  }
+  if (!['xlsx','xls','csv'].includes(ext)) { alert('Please upload a .xlsx, .xls, or .csv file'); return; }
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const data  = new Uint8Array(e.target.result);
-      const wb    = XLSX.read(data, { type: 'array' });
-      const ws    = wb.Sheets[wb.SheetNames[0]];
-      const rows  = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-      // Find ASIN column (case-insensitive)
-      const sample = rows[0] || {};
+      const data = new Uint8Array(e.target.result);
+      const wb   = XLSX.read(data, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const sample  = rows[0] || {};
       const asinKey = Object.keys(sample).find(k => k.trim().toUpperCase() === 'ASIN');
-
-      if (!asinKey) {
-        alert('Could not find an "ASIN" column in your file.\nPlease make sure the column header is exactly "ASIN".');
-        return;
-      }
-
-      // Extract and validate ASINs
-      uploadedAsins = rows
-        .map(r => (String(r[asinKey] || '')).trim().toUpperCase())
-        .filter(a => /^[A-Z0-9]{10}$/.test(a));
-
-      // Show file info
-      const icon = ext === 'csv' ? '📄' : '📊';
-      document.getElementById('fileIcon').textContent = icon;
+      if (!asinKey) { alert('Could not find an "ASIN" column.\nColumn header must be exactly "ASIN".'); return; }
+      uploadedAsins = rows.map(r => String(r[asinKey] || '').trim().toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a));
+      document.getElementById('fileIcon').textContent = ext === 'csv' ? '📄' : '📊';
       document.getElementById('fileName').textContent = file.name;
-      document.getElementById('fileMeta').textContent =
-        `${uploadedAsins.length} valid ASINs found · ${rows.length} total rows`;
+      document.getElementById('fileMeta').textContent = `${uploadedAsins.length} valid ASINs found · ${rows.length} total rows`;
       document.getElementById('fileInfo').classList.add('show');
       document.getElementById('dropZone').style.display = 'none';
       document.getElementById('bulkBtn').disabled = uploadedAsins.length === 0;
-
-      if (uploadedAsins.length === 0) {
-        alert('No valid ASINs found. ASINs must be 10 characters (letters and numbers).');
-      }
-    } catch(err) {
-      alert('Could not read file: ' + err.message);
-    }
+      if (uploadedAsins.length === 0) alert('No valid ASINs found. ASINs must be 10 characters (letters and numbers).');
+    } catch(err) { alert('Could not read file: ' + err.message); }
   };
   reader.readAsArrayBuffer(file);
 }
 
 function clearFile() {
-  uploadedAsins = [];
-  bulkResults   = [];
+  uploadedAsins = []; bulkResults = [];
   document.getElementById('fileInput').value = '';
   document.getElementById('fileInfo').classList.remove('show');
   document.getElementById('dropZone').style.display = '';
@@ -738,11 +942,7 @@ function clearFile() {
   document.getElementById('bulkResults').classList.remove('show');
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function isFailed(r) {
-  return !!(r.error || (!r.title && !r.price));
-}
+function isFailed(r) { return !!(r.error || (!r.title && !r.price)); }
 
 async function fetchOnceRaw(asin, domain) {
   const res  = await fetch(`${API}/api/product?asin=${asin}&domain=${domain}`);
@@ -755,9 +955,7 @@ async function fetchOnceRaw(asin, domain) {
   return data;
 }
 
-// Each ASIN keeps retrying independently until success or maxAttempts
 async function fetchUntilSuccess(asin, domain, idx) {
-  // Retries forever — only stops if product is confirmed dead on Amazon
   let attempt = 0;
   while (true) {
     attempt++;
@@ -771,64 +969,40 @@ async function fetchUntilSuccess(asin, domain, idx) {
       bulkResults[idx] = data;
       return true;
     } catch(e) {
-      // Dead product — stop immediately, mark as not found
       if (e.dead) {
-        bulkResults[idx] = {
-          asin, error: 'Not found on Amazon (delisted or invalid)',
-          title: null, price: null, rating: null, availability: 'Not Found'
-        };
+        bulkResults[idx] = { asin, error: 'Not found on Amazon (delisted or invalid)', title: null, price: null, rating: null, availability: 'Not Found' };
         return false;
       }
-      // Blocked — keep retrying
-      bulkResults[idx] = {
-        asin, error: `Retrying… (attempt ${attempt})`,
-        title: null, price: null, rating: null, availability: 'Retrying'
-      };
+      bulkResults[idx] = { asin, error: `Retrying… (attempt ${attempt})`, title: null, price: null, rating: null, availability: 'Retrying' };
     }
   }
 }
 
 function updateProgressUI(done, total, retryingCount) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  document.getElementById('progressLabel').textContent   = retryingCount > 0
-    ? `✅ ${done} done · 🔄 ${retryingCount} still fetching (auto-retrying)…`
+  document.getElementById('progressLabel').textContent = retryingCount > 0
+    ? `${done} done · ${retryingCount} still fetching…`
     : `Fetching all ${total} ASINs…`;
-  document.getElementById('progressBar').style.width     = pct + '%';
-  document.getElementById('progressCount').textContent   = `${done} / ${total}`;
+  document.getElementById('progressBar').style.width   = pct + '%';
+  document.getElementById('progressCount').textContent = `${done} / ${total}`;
   document.getElementById('progressCurrent').textContent = retryingCount > 0
-    ? `${retryingCount} ASINs blocked by Amazon — retrying automatically until all succeed`
+    ? `${retryingCount} ASINs blocked by Amazon — retrying automatically`
     : `Fetched ${done} of ${total}…`;
 }
 
 async function startBulk() {
   if (bulkRunning || uploadedAsins.length === 0) return;
-  bulkRunning = true;
-  bulkResults = [];
-
+  bulkRunning = true; bulkResults = [];
   const domain = document.getElementById('domain').value;
   const total  = uploadedAsins.length;
-
   document.getElementById('bulkBtn').disabled = true;
   document.getElementById('progressWrap').classList.add('show');
   document.getElementById('bulkResults').classList.remove('show');
-
-  // Pre-fill placeholders so indices are stable
   for (let i = 0; i < total; i++) {
-    bulkResults.push({
-      asin: uploadedAsins[i], error: 'Pending',
-      title: null, price: null, rating: null, availability: 'Pending'
-    });
+    bulkResults.push({ asin: uploadedAsins[i], error: 'Pending', title: null, price: null, rating: null, availability: 'Pending' });
   }
-
   updateProgressUI(0, total, 0);
-
-  // All ASINs fire simultaneously — staggered 150ms apart
-  // Each one independently keeps retrying until it gets data (up to 20 attempts)
-  const promises = uploadedAsins.map((asin, idx) =>
-    sleep(idx * 150).then(() => fetchUntilSuccess(asin, domain, idx))
-  );
-
-  // Refresh UI + table every 600ms while running
+  const promises = uploadedAsins.map((asin, idx) => sleep(idx * 150).then(() => fetchUntilSuccess(asin, domain, idx)));
   let allDone = false;
   const uiInterval = setInterval(() => {
     if (allDone) { clearInterval(uiInterval); return; }
@@ -837,34 +1011,28 @@ async function startBulk() {
     updateProgressUI(done, total, retrying);
     renderBulkTable(false);
   }, 600);
-
-  // Wait for every ASIN to finish (success or exhausted retries)
   await Promise.all(promises);
-  allDone = true;
-  clearInterval(uiInterval);
-
+  allDone = true; clearInterval(uiInterval);
   const successCount = bulkResults.filter(r => !isFailed(r)).length;
-
   document.getElementById('progressLabel').textContent   = '✓ Complete';
   document.getElementById('progressBar').style.width     = '100%';
   document.getElementById('progressCount').textContent   = `${total} / ${total}`;
-  document.getElementById('progressCurrent').textContent = `✅ All ${total} ASINs fetched successfully!`;
-
+  document.getElementById('progressCurrent').textContent = `All ${total} ASINs fetched successfully`;
   renderBulkTable(true);
   bulkRunning = false;
   document.getElementById('bulkBtn').disabled = false;
 }
 
-function availClass(status) {
-  if (status === 'In Stock')                 return 'tbl-in';
-  if (status === 'Low Stock')                return 'tbl-low';
-  if (status === 'Out of Stock')             return 'tbl-out';
-  if (status === 'Currently Unavailable')    return 'tbl-out';
-  if (status === 'Temporarily Out of Stock') return 'tbl-low';
-  if (status === 'Error')                    return 'tbl-err';
-  if (status === 'Retrying')                 return 'tbl-retrying';
-  if (status === 'Pending')                  return 'tbl-pending';
-  if (status === 'Not Found')                return 'tbl-notfound';
+function availClass(s) {
+  if (s === 'In Stock')                 return 'tbl-in';
+  if (s === 'Low Stock')                return 'tbl-low';
+  if (s === 'Out of Stock')             return 'tbl-out';
+  if (s === 'Currently Unavailable')    return 'tbl-out';
+  if (s === 'Temporarily Out of Stock') return 'tbl-low';
+  if (s === 'Error')                    return 'tbl-err';
+  if (s === 'Retrying')                 return 'tbl-retrying';
+  if (s === 'Pending')                  return 'tbl-pending';
+  if (s === 'Not Found')                return 'tbl-notfound';
   return 'tbl-unk';
 }
 
@@ -873,147 +1041,102 @@ function renderBulkTable(isFinal = true) {
   const failed  = bulkResults.filter(isFailed);
   const success = total - failed.length;
   const display = bulkResults.slice(0, 10);
-
   document.getElementById('resultsTitle').textContent = `Results — ${total} ASINs`;
-
   const retrying = bulkResults.filter(r => r.availability === 'Retrying' || r.availability === 'Pending').length;
-  let meta = `✅ ${success} fetched`;
-  if (retrying > 0) meta += ` · 🔄 ${retrying} auto-retrying…`;
+  let meta = `${success} fetched`;
+  if (retrying > 0) meta += ` · ${retrying} retrying…`;
   document.getElementById('resultsMeta').textContent = meta;
-
-  // Show note if more than 10 — prompt download for full data
   const moreNote = document.getElementById('moreNote');
   if (total > 10) {
-    moreNote.textContent = `📋 Showing first 10 of ${total} ASINs on dashboard. Download the report to see all ${total} products.`;
+    moreNote.textContent = `Showing first 10 of ${total} ASINs. Download the report to see all ${total} products.`;
     moreNote.classList.add('show');
-  } else {
-    moreNote.classList.remove('show');
-  }
-
-  const tbody = document.getElementById('bulkTableBody');
-  tbody.innerHTML = display.map((r, i) => {
+  } else { moreNote.classList.remove('show'); }
+  const domain = document.getElementById('domain').value;
+  document.getElementById('bulkTableBody').innerHTML = display.map((r, i) => {
     const isPending = r.availability === 'Pending' || r.availability === 'Retrying';
     const titleTxt  = r.title
-      ? r.title.slice(0, 55) + (r.title.length > 55 ? '…' : '')
-      : (isPending ? '🔄 Fetching…' : isFailed(r) ? `⚠ ${r.error || 'No data'}` : '—');
-    return `
-    <tr>
+      ? r.title.slice(0, 52) + (r.title.length > 52 ? '…' : '')
+      : (isPending ? 'Fetching…' : isFailed(r) ? (r.error || 'No data') : '—');
+    return `<tr>
       <td style="color:var(--text3);font-size:11px">${i + 1}</td>
-      <td class="asin-cell">
-        <a href="https://www.amazon.in/dp/${r.asin}" target="_blank"
-           style="color:var(--text);text-decoration:none;" title="Open on Amazon">
-          ${r.asin || '—'}
-        </a>
-      </td>
-      <td class="title-cell" title="${(r.title || '').replace(/"/g,"'")}">${titleTxt}</td>
-      <td class="price-cell">${r.price ? `₹${Number(r.price).toLocaleString('en-IN')}` : '—'}</td>
-      <td class="rating-cell">${r.rating ? `★ ${r.rating}` : '—'}</td>
-      <td style="color:var(--text3);font-size:11px">${r.rating_count ? Number(r.rating_count).toLocaleString('en-IN') : '—'}</td>
+      <td class="td-asin"><a href="https://www.${domain}/dp/${r.asin}" target="_blank" style="color:var(--text);text-decoration:none">${r.asin || '—'}</a></td>
+      <td class="td-title" title="${(r.title || '').replace(/"/g,"'")}">${titleTxt}</td>
+      <td class="td-price">${r.price ? `₹${Number(r.price).toLocaleString('en-IN')}` : '—'}</td>
+      <td class="td-rating">${r.rating ? `★ ${r.rating}` : '—'}</td>
+      <td class="td-count">${r.rating_count ? Number(r.rating_count).toLocaleString('en-IN') : '—'}</td>
       <td><span class="tbl-badge ${availClass(r.availability)}">${r.availability || 'Unknown'}</span></td>
     </tr>`;
   }).join('');
-
   document.getElementById('bulkResults').classList.add('show');
 }
 
-/* ── Download CSV ──────────────────────────────────────────────────────── */
 function downloadCSV() {
   const now     = new Date().toISOString().slice(0, 10);
   const headers = ['#','ASIN','Title','Price (INR)','Rating','Ratings Count','Availability','Status','URL','Fetched At'];
   const rows    = bulkResults.map((r, i) => [
-    i + 1,
-    r.asin || '',
+    i + 1, r.asin || '',
     `"${(r.title || r.error || '').replace(/"/g, '""')}"`,
-    r.price  || '',
-    r.rating || '',
-    r.rating_count || '',
-    r.availability || '',
-    isFailed(r) ? 'Failed' : 'Success',
+    r.price || '', r.rating || '', r.rating_count || '',
+    r.availability || '', isFailed(r) ? 'Failed' : 'Success',
     r.url || `https://www.amazon.in/dp/${r.asin}`,
     `"${new Date().toLocaleString('en-IN')}"`,
   ]);
   const csv  = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }); // BOM for Excel compatibility
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = `price-scout-${now}.csv`;
+  a.download = `scoutly-${now}.csv`;
   a.click();
 }
 
-/* ── Download Excel ────────────────────────────────────────────────────── */
 function downloadXLSX() {
   const now    = new Date().toISOString().slice(0, 10);
   const domain = document.getElementById('domain').value;
-
-  // Main data sheet
   const wsData = [
-    ['#', 'ASIN', 'Title', 'Price (INR)', 'Rating', 'Ratings Count', 'Availability', 'Status', 'Amazon URL', 'Fetched At'],
+    ['#','ASIN','Title','Price (INR)','Rating','Ratings Count','Availability','Status','Amazon URL','Fetched At'],
     ...bulkResults.map((r, i) => [
-      i + 1,
-      r.asin || '',
-      r.title || r.error || '',
-      r.price  || '',
-      r.rating || '',
-      r.rating_count || '',
-      r.availability || '',
-      isFailed(r) ? 'Failed' : 'Success',
-      r.url || `https://www.amazon.in/dp/${r.asin}`,
+      i + 1, r.asin || '', r.title || r.error || '',
+      r.price || '', r.rating || '', r.rating_count || '',
+      r.availability || '', isFailed(r) ? 'Failed' : 'Success',
+      r.url || `https://www.${domain}/dp/${r.asin}`,
       new Date().toLocaleString('en-IN'),
     ])
   ];
-
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   ws['!cols'] = [
-    { wch: 4  }, { wch: 14 }, { wch: 55 }, { wch: 12 },
-    { wch: 8  }, { wch: 14 }, { wch: 20 }, { wch: 10 }, { wch: 42 }, { wch: 22 },
+    {wch:4},{wch:14},{wch:55},{wch:12},
+    {wch:8},{wch:14},{wch:22},{wch:10},{wch:42},{wch:22},
   ];
   XLSX.utils.book_append_sheet(wb, ws, 'All Products');
-
-  // Failed sheet — easy to re-upload
   const failedRows = bulkResults.filter(isFailed);
   if (failedRows.length > 0) {
-    const failData = [
-      ['ASIN', 'Error', 'Amazon URL'],
-      ...failedRows.map(r => [
-        r.asin || '',
-        r.error || 'No data fetched',
-        `https://www.amazon.in/dp/${r.asin}`,
-      ])
-    ];
-    const wsFail = XLSX.utils.aoa_to_sheet(failData);
-    wsFail['!cols'] = [{ wch: 14 }, { wch: 30 }, { wch: 42 }];
+    const wsFail = XLSX.utils.aoa_to_sheet([
+      ['ASIN','Error','Amazon URL'],
+      ...failedRows.map(r => [r.asin||'', r.error||'No data', `https://www.${domain}/dp/${r.asin}`])
+    ]);
+    wsFail['!cols'] = [{wch:14},{wch:30},{wch:42}];
     XLSX.utils.book_append_sheet(wb, wsFail, 'Failed ASINs');
   }
-
-  // Summary sheet
-  const successCount  = bulkResults.filter(r => !isFailed(r)).length;
-  const outOfStock    = bulkResults.filter(r => r.availability === 'Out of Stock').length;
-  const prices        = bulkResults.filter(r => r.price).map(r => r.price);
-  const avgPrice      = prices.length ? Math.round(prices.reduce((a,b) => a+b, 0) / prices.length) : 0;
-  const minPrice      = prices.length ? Math.min(...prices) : 0;
-  const maxPrice      = prices.length ? Math.max(...prices) : 0;
-
-  const summaryData = [
-    ['Price Scout Report — Summary'],
-    [''],
-    ['Generated',          new Date().toLocaleString('en-IN')],
-    ['Domain',             domain],
-    [''],
-    ['Total ASINs',        bulkResults.length],
-    ['Successfully Fetched', successCount],
-    ['Failed / Not Found', failedRows.length],
-    ['Out of Stock',       outOfStock],
-    [''],
-    ['Average Price (INR)', avgPrice],
-    ['Min Price (INR)',     minPrice],
-    ['Max Price (INR)',     maxPrice],
-  ];
-  const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
-  ws2['!cols'] = [{ wch: 25 }, { wch: 30 }];
+  const successCount = bulkResults.filter(r => !isFailed(r)).length;
+  const prices = bulkResults.filter(r => r.price).map(r => r.price);
+  const avgPrice = prices.length ? Math.round(prices.reduce((a,b)=>a+b,0)/prices.length) : 0;
+  const ws2 = XLSX.utils.aoa_to_sheet([
+    ['Scoutly — Report Summary'],[''],
+    ['Generated', new Date().toLocaleString('en-IN')],
+    ['Domain', domain],[''],
+    ['Total ASINs', bulkResults.length],
+    ['Successfully fetched', successCount],
+    ['Failed / not found', failedRows.length],
+    ['Out of stock', bulkResults.filter(r=>r.availability==='Out of Stock').length],
+    ['Currently unavailable', bulkResults.filter(r=>r.availability==='Currently Unavailable').length],[''],
+    ['Average price (INR)', avgPrice],
+    ['Min price (INR)', prices.length ? Math.min(...prices) : 0],
+    ['Max price (INR)', prices.length ? Math.max(...prices) : 0],
+  ]);
+  ws2['!cols'] = [{wch:25},{wch:30}];
   XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
-
-  XLSX.writeFile(wb, `price-scout-${now}.xlsx`);
+  XLSX.writeFile(wb, `scoutly-${now}.xlsx`);
 }
 </script>
 </body>
