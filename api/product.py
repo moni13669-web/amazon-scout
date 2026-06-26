@@ -130,69 +130,118 @@ def parse(html, asin, domain):
     except Exception:
         pass
 
-    # ── Price (sale price only, skip MRP/strikethrough) ────────
-    price = None
+    # ── Availability — resolved FIRST so we never leak carousel prices ──
+    # Amazon shows "similar product" prices on OOS pages in the same
+    # price selectors; we must gate price extraction on availability.
+    availability = "Unknown"
+    is_available = False
     try:
-        # Method 1: corePriceDisplay block — most reliable
-        core = (
-            soup.find("div", {"id": "corePriceDisplay_desktop_feature_div"}) or
-            soup.find("div", {"id": "corePrice_desktop"}) or
-            soup.find("div", {"id": "apex_desktop"})
-        )
-        if core:
-            for block in core.find_all("span", {"class": "a-price"}):
-                cls = " ".join(block.get("class", []))
-                if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
-                    continue
-                off = block.find("span", {"class": "a-offscreen"})
-                if off:
-                    p = clean_price(off.get_text())
-                    if p:
-                        price = p
-                        break
-
-        # Method 2: any non-MRP price span on page
-        if not price:
-            for block in soup.find_all("span", {"class": "a-price"}):
-                cls = " ".join(block.get("class", []))
-                if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
-                    continue
-                off = block.find("span", {"class": "a-offscreen"})
-                if off:
-                    p = clean_price(off.get_text())
-                    if p:
-                        price = p
-                        break
-
-        # Method 3: whole + fraction
-        if not price:
-            whole = soup.find("span", {"class": "a-price-whole"})
-            frac  = soup.find("span", {"class": "a-price-fraction"})
-            if whole:
-                w = re.sub(r"[^\d]", "", whole.get_text())
-                f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
-                try:
-                    price = float(f"{w}.{f}") if w else None
-                except Exception:
-                    pass
-
-        # Method 4: legacy IDs
-        if not price:
-            for pid in ["priceblock_ourprice", "priceblock_dealprice", "priceblock_saleprice"]:
-                tag = soup.find("span", {"id": pid})
-                if tag:
-                    p = clean_price(tag.get_text())
-                    if p:
-                        price = p
-                        break
-
+        avail_div = soup.find("div", {"id": "availability"})
+        if avail_div:
+            txt = avail_div.get_text(strip=True).lower()
+            if "in stock" in txt:
+                availability = "In Stock"
+                is_available = True
+            elif "only" in txt and "left" in txt:
+                availability = "Low Stock"
+                is_available = True
+            elif any(x in txt for x in [
+                "out of stock", "unavailable", "not available",
+                "currently unavailable",
+            ]):
+                availability = "Out of Stock"
+                is_available = False
+            else:
+                # Truncated raw text — treat as unknown, still try price
+                availability = avail_div.get_text(strip=True)[:50]
+                is_available = None   # uncertain — attempt price anyway
+        else:
+            # No availability div — infer later from buybox
+            is_available = None
     except Exception:
         pass
 
-    # Sanity: if price looks like MRP (too high vs actual), trust nothing
-    # Just return what we found
-    if price and price > 500000:
-        price = None
+    # ── Price (buybox only, skip MRP/strikethrough) ────────────
+    # We ONLY look inside the buybox / core-price containers so we never
+    # accidentally pick up "sponsored" or "similar items" carousel prices.
+    price = None
+    if is_available is not False:   # skip entirely if confirmed OOS
+        try:
+            # Scope: prefer the buybox region; fall back progressively.
+            buybox = (
+                soup.find("div", {"id": "buyBoxAccordion"}) or
+                soup.find("div", {"id": "buybox"}) or
+                soup.find("div", {"id": "rightCol"}) or
+                soup.find("div", {"id": "dp-container"})
+            )
+            scope = buybox if buybox else soup
+
+            # Method 1: corePriceDisplay block inside the scoped region
+            core = (
+                scope.find("div", {"id": "corePriceDisplay_desktop_feature_div"}) or
+                scope.find("div", {"id": "corePrice_desktop"}) or
+                scope.find("div", {"id": "apex_desktop"})
+            )
+            if core:
+                for block in core.find_all("span", {"class": "a-price"}):
+                    cls = " ".join(block.get("class", []))
+                    if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
+                        continue
+                    off = block.find("span", {"class": "a-offscreen"})
+                    if off:
+                        p = clean_price(off.get_text())
+                        if p:
+                            price = p
+                            break
+
+            # Method 2: any non-MRP a-price span inside the scoped region
+            if not price:
+                for block in scope.find_all("span", {"class": "a-price"}):
+                    cls = " ".join(block.get("class", []))
+                    if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
+                        continue
+                    off = block.find("span", {"class": "a-offscreen"})
+                    if off:
+                        p = clean_price(off.get_text())
+                        if p:
+                            price = p
+                            break
+
+            # Method 3: whole + fraction (scoped)
+            if not price:
+                whole = scope.find("span", {"class": "a-price-whole"})
+                frac  = scope.find("span", {"class": "a-price-fraction"})
+                if whole:
+                    w = re.sub(r"[^\d]", "", whole.get_text())
+                    f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
+                    try:
+                        price = float(f"{w}.{f}") if w else None
+                    except Exception:
+                        pass
+
+            # Method 4: legacy price-block IDs (always page-wide, but rare now)
+            if not price:
+                for pid in ["priceblock_ourprice", "priceblock_dealprice", "priceblock_saleprice"]:
+                    tag = soup.find("span", {"id": pid})
+                    if tag:
+                        p = clean_price(tag.get_text())
+                        if p:
+                            price = p
+                            break
+
+            if price and price > 500000:
+                price = None
+
+        except Exception:
+            pass
+
+    # ── Reconcile availability with price evidence ──────────────
+    # If availability was unknown and we found no price, mark OOS.
+    if availability == "Unknown":
+        if price:
+            availability = "In Stock"
+        else:
+            availability = "Out of Stock"
 
     # ── Rating ─────────────────────────────────────────────────
     rating = None
@@ -208,27 +257,6 @@ def parse(html, asin, domain):
                 m = re.search(r"([\d.]+)", tag.get_text())
                 if m:
                     rating = float(m.group(1))
-    except Exception:
-        pass
-
-    # ── Availability (simple) ──────────────────────────────────
-    availability = "Unknown"
-    try:
-        avail = soup.find("div", {"id": "availability"})
-        if avail:
-            txt = avail.get_text(strip=True).lower()
-            if "in stock" in txt:
-                availability = "In Stock"
-            elif "only" in txt and "left" in txt:
-                availability = "Low Stock"
-            elif any(x in txt for x in ["out of stock", "unavailable", "not available"]):
-                availability = "Out of Stock"
-            else:
-                availability = avail.get_text(strip=True)[:40]
-        elif price:
-            availability = "In Stock"
-        else:
-            availability = "Out of Stock"
     except Exception:
         pass
 
