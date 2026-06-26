@@ -131,49 +131,109 @@ def parse(html, asin, domain):
         pass
 
     # ── Availability — resolved FIRST so we never leak carousel prices ──
-    # Amazon shows "similar product" prices on OOS pages in the same
-    # price selectors; we must gate price extraction on availability.
+    # Amazon shows "Consider these available items" carousels on OOS pages;
+    # those contain real prices in the same selectors we use. We must confirm
+    # OOS *before* attempting price extraction.
+    OOS_PHRASES = [
+        "currently unavailable",
+        "out of stock",
+        "not available",
+        "unavailable",
+        "we don't know when or if this item will be back in stock",
+    ]
     availability = "Unknown"
-    is_available = False
+    is_available = None   # None = uncertain; True = purchasable; False = confirmed OOS
     try:
+        # ── Layer 1: #availability div (most reliable on standard pages) ──
         avail_div = soup.find("div", {"id": "availability"})
         if avail_div:
-            txt = avail_div.get_text(strip=True).lower()
+            txt = avail_div.get_text(" ", strip=True).lower()
             if "in stock" in txt:
                 availability = "In Stock"
                 is_available = True
             elif "only" in txt and "left" in txt:
                 availability = "Low Stock"
                 is_available = True
-            elif any(x in txt for x in [
-                "out of stock", "unavailable", "not available",
-                "currently unavailable",
-            ]):
+            elif any(phrase in txt for phrase in OOS_PHRASES):
                 availability = "Out of Stock"
                 is_available = False
             else:
-                # Truncated raw text — treat as unknown, still try price
-                availability = avail_div.get_text(strip=True)[:50]
-                is_available = None   # uncertain — attempt price anyway
-        else:
-            # No availability div — infer later from buybox
-            is_available = None
+                availability = avail_div.get_text(strip=True)[:60]
+                is_available = None
+
+        # ── Layer 2: scan the buybox region text directly ─────────────────
+        # On pages like Image 2, the buybox prominently shows
+        # "Currently unavailable." even when #availability is absent/ambiguous.
+        if is_available is not False:
+            for box_id in [
+                "buyBoxAccordion", "buybox", "rightCol", "merchant-info",
+                "outOfStock", "exports_desktop_qualifiedBuybox_feature_div",
+            ]:
+                box = soup.find(attrs={"id": box_id})
+                if not box:
+                    continue
+                box_txt = box.get_text(" ", strip=True).lower()
+                if any(phrase in box_txt for phrase in OOS_PHRASES):
+                    availability = "Out of Stock"
+                    is_available = False
+                    break
+                if is_available is None and "in stock" in box_txt:
+                    availability = "In Stock"
+                    is_available = True
+                    break
+                if is_available is None and (
+                    "add to cart" in box_txt or "buy now" in box_txt
+                ):
+                    is_available = True   # cart buttons present = purchasable
+
+        # ── Layer 3: explicit OOS feature div (rare but unambiguous) ──────
+        if is_available is not False:
+            oos_div = soup.find("div", {"id": "outOfStock_feature_div"})
+            if oos_div and oos_div.get_text(strip=True):
+                availability = "Out of Stock"
+                is_available = False
+
     except Exception:
         pass
 
     # ── Price (buybox only, skip MRP/strikethrough) ────────────
-    # We ONLY look inside the buybox / core-price containers so we never
-    # accidentally pick up "sponsored" or "similar items" carousel prices.
+    # Strategy:
+    #   1. If confirmed OOS → skip entirely, price stays None.
+    #   2. Otherwise scope to the buybox/rightCol region which never
+    #      contains carousel prices.
+    #   3. Before falling back to full-page search, explicitly REMOVE
+    #      carousel/similar-items sections so they can't bleed through.
     price = None
     if is_available is not False:   # skip entirely if confirmed OOS
         try:
-            # Scope: prefer the buybox region; fall back progressively.
+            # Scope: tightest authoritative container first
             buybox = (
                 soup.find("div", {"id": "buyBoxAccordion"}) or
                 soup.find("div", {"id": "buybox"}) or
-                soup.find("div", {"id": "rightCol"}) or
-                soup.find("div", {"id": "dp-container"})
+                soup.find("div", {"id": "rightCol"})
             )
+
+            # If no buybox found, fall back to dp-container but strip
+            # carousel / "consider these" / sponsored sections first.
+            if not buybox:
+                dp = soup.find("div", {"id": "dp-container"})
+                if dp:
+                    import copy
+                    dp = copy.copy(dp)   # don't mutate original soup
+                    for carousel_id in [
+                        "similarities_feature_div",
+                        "purchase-sims-feature",
+                        "session-sims-feature",
+                        "rhf",                          # "consider these" right-hand frame
+                        "sp_detail",                    # sponsored products
+                        "sponsoredProducts2_feature_div",
+                        "desktop-dp-sims",
+                    ]:
+                        el = dp.find(attrs={"id": carousel_id})
+                        if el:
+                            el.decompose()
+                    buybox = dp
+
             scope = buybox if buybox else soup
 
             # Method 1: corePriceDisplay block inside the scoped region
