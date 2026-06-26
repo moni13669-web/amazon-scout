@@ -53,7 +53,7 @@ def is_dead_page(html):
         "not a functioning page",
         "page on our site",
         "dogs of amazon",
-        "we couldn\'t find that page",
+        "we couldn't find that page",
         "the web address you entered is not",
     ])
 
@@ -78,7 +78,6 @@ def fetch_with_retry(url, max_attempts=6):
     session = requests.Session()
     for attempt in range(max_attempts):
         try:
-            # Fast first try, then add small delays
             if attempt > 0:
                 time.sleep(random.uniform(0.5, 1.5) * attempt)
 
@@ -88,18 +87,17 @@ def fetch_with_retry(url, max_attempts=6):
             if resp.status_code == 404:
                 return None, "Product not found. Check the ASIN."
             if resp.status_code in (503, 429, 403):
-                continue  # retry immediately with new UA
+                continue
             if resp.status_code != 200:
                 continue
 
             html = resp.text
 
-            # Dead product — stop immediately, no point retrying
             if is_dead_page(html):
                 return None, "DEAD_PAGE"
 
             if is_blocked(html):
-                continue  # retry with new UA
+                continue
 
             return html, None
 
@@ -113,6 +111,72 @@ def fetch_with_retry(url, max_attempts=6):
             continue
 
     return None, "Amazon blocked all attempts. Try again in a moment."
+
+
+def detect_availability(soup, price):
+    """
+    Robustly detect product availability.
+    Returns one of: "In Stock", "Currently Unavailable", "Low Stock", "Out of Stock", "Unknown"
+    """
+    # ── Check #1: merchant-info / buybox unavailability signals ──────────────
+    # These are the most reliable indicators for "Currently unavailable"
+    unavail_ids = [
+        "outOfStock",
+        "availability",
+        "exports_desktop_qualifiedBuyBox_tlc_feature_div",
+        "buybox-see-all-buying-choices",
+    ]
+
+    # Check the dedicated availability div first
+    avail_div = soup.find("div", {"id": "availability"})
+    if avail_div:
+        txt = avail_div.get_text(separator=" ", strip=True).lower()
+        if any(x in txt for x in [
+            "currently unavailable",
+            "we don't know when or if this item will be back in stock",
+            "unavailable",
+        ]):
+            return "Currently Unavailable"
+        if "in stock" in txt:
+            return "In Stock"
+        if "only" in txt and "left" in txt:
+            return "Low Stock"
+        if any(x in txt for x in ["out of stock", "not available"]):
+            return "Out of Stock"
+
+    # ── Check #2: Add to Cart / Buy Now buttons present? ─────────────────────
+    # If these exist, the product is purchasable → In Stock
+    add_to_cart = soup.find("input", {"id": "add-to-cart-button"})
+    buy_now     = soup.find("input", {"id": "buy-now-button"})
+    if add_to_cart or buy_now:
+        return "In Stock"
+
+    # ── Check #3: merchant-info block containing "Currently unavailable" ──────
+    merchant_info = soup.find("div", {"id": "merchant-info"})
+    if merchant_info:
+        txt = merchant_info.get_text(separator=" ", strip=True).lower()
+        if "currently unavailable" in txt or "unavailable" in txt:
+            return "Currently Unavailable"
+
+    # ── Check #4: olp_feature_div — "Currently unavailable" often appears here ─
+    olp = soup.find("div", {"id": "olp_feature_div"})
+    if olp:
+        txt = olp.get_text(separator=" ", strip=True).lower()
+        if "currently unavailable" in txt:
+            return "Currently Unavailable"
+
+    # ── Check #5: Scan full page text for the canonical Amazon phrase ─────────
+    page_text = soup.get_text(separator=" ", strip=True).lower()
+    if "currently unavailable" in page_text:
+        return "Currently Unavailable"
+    if "we don't know when or if this item will be back in stock" in page_text:
+        return "Currently Unavailable"
+
+    # ── Fallback: infer from price ────────────────────────────────────────────
+    if price:
+        return "In Stock"
+
+    return "Unknown"
 
 
 def parse(html, asin, domain):
@@ -130,158 +194,77 @@ def parse(html, asin, domain):
     except Exception:
         pass
 
-    # ══════════════════════════════════════════════════════════════
-    # AVAILABILITY
-    # ══════════════════════════════════════════════════════════════
-    # Rule: ONLY read from #availability > span — this is the single
-    # canonical element Amazon uses for the *selected* variant's stock
-    # status. Never scan broad regions like #rightCol or #buybox because
-    # those contain colour-swatch labels ("Currently unavailable") for
-    # *other* variants, which would falsely mark an in-stock product OOS.
-    #
-    # For the OOS carousel-price problem (carousel prices on OOS pages):
-    # we solve it purely through price-scope isolation (see below), NOT
-    # by trying to gate on availability text found in broad containers.
-    # ══════════════════════════════════════════════════════════════
-    availability = "Unknown"
-    is_oos = False   # True only when we are CERTAIN this variant is OOS
-
-    OOS_PHRASES = [
-        "currently unavailable",
-        "out of stock",
-        "not available",
-        "we don't know when or if this item will be back in stock",
-    ]
-
+    # ── Price (sale price only, skip MRP/strikethrough) ────────
+    price = None
     try:
-        avail_div = soup.find("div", {"id": "availability"})
-        if avail_div:
-            # Use only the direct <span> child text to avoid noise from
-            # nested elements (e.g. delivery date spans).
-            span = avail_div.find("span")
-            raw  = (span or avail_div).get_text(" ", strip=True)
-            txt  = raw.lower()
+        # Method 1: corePriceDisplay block — most reliable
+        core = (
+            soup.find("div", {"id": "corePriceDisplay_desktop_feature_div"}) or
+            soup.find("div", {"id": "corePrice_desktop"}) or
+            soup.find("div", {"id": "apex_desktop"})
+        )
+        if core:
+            for block in core.find_all("span", {"class": "a-price"}):
+                cls = " ".join(block.get("class", []))
+                if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
+                    continue
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    p = clean_price(off.get_text())
+                    if p:
+                        price = p
+                        break
 
-            if "in stock" in txt:
-                availability = "In Stock"
-            elif "only" in txt and "left" in txt:
-                availability = "Low Stock"
-            elif any(p in txt for p in OOS_PHRASES):
-                availability = "Out of Stock"
-                is_oos = True
-            else:
-                availability = raw[:60]   # unknown phrasing — show as-is
+        # Method 2: any non-MRP price span on page
+        if not price:
+            for block in soup.find_all("span", {"class": "a-price"}):
+                cls = " ".join(block.get("class", []))
+                if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
+                    continue
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    p = clean_price(off.get_text())
+                    if p:
+                        price = p
+                        break
 
-        else:
-            # No #availability div at all — fall back to checking two
-            # unambiguous, variant-agnostic IDs only:
-            #   #outOfStock_feature_div  → Amazon's explicit OOS block
-            #   #addToCart_feature_div   → presence = purchasable
-            oos_block = soup.find("div", {"id": "outOfStock_feature_div"})
-            atc_block  = soup.find("div", {"id": "addToCart_feature_div"})
-            if oos_block and oos_block.get_text(strip=True):
-                availability = "Out of Stock"
-                is_oos = True
-            elif atc_block:
-                availability = "In Stock"
-            # else leave as "Unknown" and infer from price below
+        # Method 3: whole + fraction
+        if not price:
+            whole = soup.find("span", {"class": "a-price-whole"})
+            frac  = soup.find("span", {"class": "a-price-fraction"})
+            if whole:
+                w = re.sub(r"[^\d]", "", whole.get_text())
+                f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
+                try:
+                    price = float(f"{w}.{f}") if w else None
+                except Exception:
+                    pass
+
+        # Method 4: legacy IDs
+        if not price:
+            for pid in ["priceblock_ourprice", "priceblock_dealprice", "priceblock_saleprice"]:
+                tag = soup.find("span", {"id": pid})
+                if tag:
+                    p = clean_price(tag.get_text())
+                    if p:
+                        price = p
+                        break
 
     except Exception:
         pass
 
-    # ══════════════════════════════════════════════════════════════
-    # PRICE
-    # ══════════════════════════════════════════════════════════════
-    # If confirmed OOS → return None immediately; do not touch any
-    # price selector.  Amazon renders carousel prices ("Consider these
-    # available items") in the SAME a-offscreen spans we use, so the
-    # only safe option for OOS pages is no price at all.
-    #
-    # For in-stock / unknown pages → search in this priority order:
-    #   1. Named price IDs (corePriceDisplay, apex_desktop) — these
-    #      exist only in the buybox and are never reused in carousels.
-    #   2. #corePrice_feature_div  (mobile/simplified layout)
-    #   3. #price span — legacy but still appears on some listings.
-    #   4. a-price-whole + a-price-fraction inside #centerCol only
-    #      (excludes #rhf / right-hand carousel frame entirely).
-    #   Methods 1-4 intentionally NEVER search the full soup or
-    #   #rightCol, which can contain carousel/swatch prices.
-    # ══════════════════════════════════════════════════════════════
-    price = None
+    if price and price > 500000:
+        price = None
 
-    if not is_oos:
-        try:
-            def first_sale_price(container):
-                """Return first non-strikethrough a-offscreen price in container."""
-                if not container:
-                    return None
-                for block in container.find_all("span", {"class": "a-price"}):
-                    cls = " ".join(block.get("class", []))
-                    if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
-                        continue
-                    off = block.find("span", {"class": "a-offscreen"})
-                    if off:
-                        p = clean_price(off.get_text())
-                        if p:
-                            return p
-                return None
+    # ── Availability ───────────────────────────────────────────
+    # Always detect availability independently — do NOT infer from price alone.
+    availability = detect_availability(soup, price)
 
-            # Method 1: corePriceDisplay (desktop buybox — most reliable)
-            core = (
-                soup.find("div", {"id": "corePriceDisplay_desktop_feature_div"}) or
-                soup.find("div", {"id": "corePrice_desktop"}) or
-                soup.find("div", {"id": "apex_desktop"})
-            )
-            price = first_sale_price(core)
-
-            # Method 2: corePrice_feature_div (simplified / mobile layout)
-            if not price:
-                price = first_sale_price(
-                    soup.find("div", {"id": "corePrice_feature_div"})
-                )
-
-            # Method 3: #price span — legacy listings
-            if not price:
-                tag = soup.find("span", {"id": "price"})
-                if tag:
-                    price = clean_price(tag.get_text())
-
-            # Method 4: whole + fraction, scoped to #centerCol only
-            # #centerCol is the left product panel; it does NOT include
-            # the right-hand carousel frame (#rhf) or swatch prices.
-            if not price:
-                center = soup.find("div", {"id": "centerCol"})
-                if center:
-                    whole = center.find("span", {"class": "a-price-whole"})
-                    frac  = center.find("span", {"class": "a-price-fraction"})
-                    if whole:
-                        w = re.sub(r"[^\d]", "", whole.get_text())
-                        f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
-                        try:
-                            price = float(f"{w}.{f}") if w else None
-                        except Exception:
-                            pass
-
-            # Method 5: legacy priceblock IDs (rare on modern pages)
-            if not price:
-                for pid in ["priceblock_ourprice", "priceblock_dealprice",
-                            "priceblock_saleprice"]:
-                    tag = soup.find("span", {"id": pid})
-                    if tag:
-                        p = clean_price(tag.get_text())
-                        if p:
-                            price = p
-                            break
-
-            if price and price > 500000:
-                price = None
-
-        except Exception:
-            pass
-
-    # ── Reconcile unknown availability using price evidence ─────
-    if availability == "Unknown":
-        availability = "In Stock" if price else "Out of Stock"
+    # ── If currently unavailable, clear price (no buyable price shown) ────────
+    # Amazon sometimes leaks MRP into the DOM even for unavailable products,
+    # so we nullify it to avoid misleading the caller.
+    if availability == "Currently Unavailable":
+        price = None
 
     # ── Rating ─────────────────────────────────────────────────
     rating = None
@@ -327,7 +310,8 @@ def scrape(asin, domain):
 
         data = parse(html, asin, domain)
 
-        if not data["title"] and not data["price"]:
+        # A title with no price and "Unknown" availability is suspicious — could be a parse fail
+        if not data["title"] and not data["price"] and data["availability"] == "Unknown":
             return {"error": "Could not extract data. Try again.", "status": 422}
 
         return data
