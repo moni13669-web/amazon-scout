@@ -631,48 +631,66 @@ function fmtPrice(p,cur){
 }
 
 /* ── Price history ── */
-function saveHistory(asin,price){
-  if(!price)return;
-  const key=`sc_${asin}`;
-  const arr=JSON.parse(localStorage.getItem(key)||'[]');
-  arr.push({price,ts:Date.now()});
-  if(arr.length>60)arr.splice(0,arr.length-60);
-  localStorage.setItem(key,JSON.stringify(arr));
+/* ── Safe storage: localStorage with in-memory fallback ── */
+const _memStore = {};
+const store = {
+  get(key) {
+    try { return localStorage.getItem(key); }
+    catch(e) { return _memStore[key] ?? null; }
+  },
+  set(key, val) {
+    try { localStorage.setItem(key, val); }
+    catch(e) { _memStore[key] = val; }
+  }
+};
+
+function saveHistory(asin, price) {
+  if (!price) return;
+  const key = `sc_${asin}`;
+  const arr = JSON.parse(store.get(key) || '[]');
+  arr.push({ price, ts: Date.now() });
+  if (arr.length > 60) arr.splice(0, arr.length - 60);
+  store.set(key, JSON.stringify(arr));
+}
+
+function getHistory(asin) {
+  return JSON.parse(store.get(`sc_${asin}`) || '[]');
 }
 
 /* chart state */
-let chartPts=[], chartCanvas=null, chartCtx=null;
+let chartPts = [], chartCanvas = null, chartCtx = null;
 
-function renderChart(asin,currentPrice){
-  const arr=JSON.parse(localStorage.getItem(`sc_${asin}`)||'[]');
-  const empty=document.getElementById('chartEmpty');
-  const canvas=document.getElementById('priceChart');
-  const statsEl=document.getElementById('chartStats');
-  const meta=document.getElementById('chartMeta');
+function renderChart(asin, currentPrice) {
+  const arr = getHistory(asin);
+  const empty = document.getElementById('chartEmpty');
+  const canvas = document.getElementById('priceChart');
+  const statsEl = document.getElementById('chartStats');
+  const meta = document.getElementById('chartMeta');
 
-  if(arr.length<2){
-    empty.style.display='flex';canvas.style.display='none';statsEl.style.display='none';
-    meta.textContent=arr.length===1?'1 point — fetch again to build trend':'No history';
+  if (arr.length < 2) {
+    empty.style.display = 'flex'; canvas.style.display = 'none'; statsEl.style.display = 'none';
+    meta.textContent = arr.length === 1 ? '1 point — scout again to build trend' : 'No history';
     return;
   }
 
-  empty.style.display='none';canvas.style.display='block';statsEl.style.display='grid';
-  chartCanvas=canvas;chartCtx=canvas.getContext('2d');
+  empty.style.display = 'none'; canvas.style.display = 'block'; statsEl.style.display = 'grid';
+  chartCanvas = canvas; chartCtx = canvas.getContext('2d');
 
-  const prices=arr.map(h=>h.price);
-  const labels=arr.map(h=>{
-    const d=new Date(h.ts);
-    return`${d.getDate()}/${d.getMonth()+1} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const prices = arr.map(h => h.price);
+  const labels = arr.map(h => {
+    const d = new Date(h.ts);
+    return `${d.getDate()}/${d.getMonth()+1} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   });
-  const minP=Math.min(...prices),maxP=Math.max(...prices);
+  const minP = Math.min(...prices), maxP = Math.max(...prices);
 
-  meta.textContent=`${arr.length} data points`;
-  const cur=document.getElementById('domain').value;
-  document.getElementById('csCurrent').textContent=currentPrice?fmtPrice(currentPrice,cur==='amazon.in'?'INR':'USD'):'—';
-  document.getElementById('csLow').textContent=fmtPrice(minP,cur==='amazon.in'?'INR':'USD');
-  document.getElementById('csHigh').textContent=fmtPrice(maxP,cur==='amazon.in'?'INR':'USD');
+  meta.textContent = `${arr.length} data points`;
+  const cur = document.getElementById('domain').value;
+  const sym = cur === 'amazon.in' ? 'INR' : 'USD';
+  document.getElementById('csCurrent').textContent = currentPrice ? fmtPrice(currentPrice, sym) : '—';
+  document.getElementById('csLow').textContent = fmtPrice(minP, sym);
+  document.getElementById('csHigh').textContent = fmtPrice(maxP, sym);
 
-  drawChart(chartCtx,canvas,labels,prices,arr);
+  drawChart(chartCtx, canvas, labels, prices, arr);
 }
 
 function drawChart(ctx,canvas,labels,data,rawArr){
@@ -771,7 +789,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     tooltip.style.top=(cy-44)+'px';
     // draw crosshair dot
     if(chartCtx&&chartCanvas){
-      const arr=JSON.parse(localStorage.getItem(`sc_${currentAsin}`)||'[]');
+      const arr=getHistory(currentAsin);
       const labels=arr.map(h=>{const d=new Date(h.ts);return`${d.getDate()}/${d.getMonth()+1} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;});
       drawChart(chartCtx,chartCanvas,labels,arr.map(h=>h.price),arr);
       chartCtx.beginPath();chartCtx.arc(nearest.x,nearest.y,5,0,Math.PI*2);
@@ -790,7 +808,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   canvas.addEventListener('mouseleave',()=>{
     tooltip.style.display='none';
     if(currentAsin){
-      const arr=JSON.parse(localStorage.getItem(`sc_${currentAsin}`)||'[]');
+      const arr=getHistory(currentAsin);
       if(arr.length>=2&&chartCtx&&chartCanvas){
         const labels=arr.map(h=>{const d=new Date(h.ts);return`${d.getDate()}/${d.getMonth()+1} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;});
         drawChart(chartCtx,chartCanvas,labels,arr.map(h=>h.price),arr);
@@ -910,7 +928,7 @@ function copyAsin(){
   });
 }
 document.getElementById('asin').addEventListener('keydown',e=>{if(e.key==='Enter')run();});
-window.addEventListener('resize',()=>{if(currentAsin){const arr=JSON.parse(localStorage.getItem(`sc_${currentAsin}`)||'[]');if(arr.length>=2)renderChart(currentAsin,null);}});
+window.addEventListener('resize',()=>{if(currentAsin){const arr=getHistory(currentAsin);if(arr.length>=2)renderChart(currentAsin,null);}});
 
 /* ── Bulk ── */
 let uploadedAsins=[],bulkResults=[];
