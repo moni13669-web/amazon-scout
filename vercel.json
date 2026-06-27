@@ -1,23 +1,18 @@
 {
-  "version": 2,
   "builds": [
-    {
-      "src": "api/product.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
-    }
+    { "src": "api/index.py", "use": "@vercel/python" },
+    { "src": "api/scoutly_product.py", "use": "@vercel/python" },
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "launchpad.html", "use": "@vercel/static" },
+    { "src": "dashboard.html", "use": "@vercel/static" },
+    { "src": "scoutly.html", "use": "@vercel/static" },
+    { "src": "privacy.html", "use": "@vercel/static" },
+    { "src": "terms.html", "use": "@vercel/static" }
   ],
   "routes": [
-    {
-      "src": "/api/product",
-      "dest": "/api/product.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
+    { "src": "/api/scoutly-product", "dest": "/api/scoutly_product.py" },
+    { "src": "/api/(.*)", "dest": "/api/index.py" },
+    { "src": "/", "dest": "/index.html" },
+    { "src": "/(.*)", "dest": "/$1" }
   ]
 }
