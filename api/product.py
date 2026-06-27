@@ -272,77 +272,152 @@ def _first_sale_price_in(container):
     return None
 
 
-def _price_from_accordion(soup):
+def _center_col_price(soup):
     """
-    Handle Amazon's accordion buybox (used on MacBooks, high-value items, exchange offers).
+    Extract price from the central product column — the '-5% ₹1,27,990 [Price history]'
+    area shown in the main product description. This is always the correct selling price.
+    Amazon uses `corePriceDisplay_desktop_feature_div` (or `corePrice_desktop`) for this.
+    The priceToPay span inside it is the most reliable single signal.
+    """
+    for cid in [
+        "corePriceDisplay_desktop_feature_div",
+        "corePrice_desktop",
+        "corePrice_feature_div",
+        "corePrice_mobile_feature_div",
+    ]:
+        core = soup.find("div", {"id": cid})
+        if not core:
+            continue
 
-    The accordion has multiple rows like:
-      - "With Exchange"    → lower price (NOT what we want — conditional)
-      - "Without Exchange" → base selling price (THIS is the real price)
-      - Sometimes just one "New" row
+        # priceToPay inside corePriceDisplay is 100% the selling price
+        ttp = core.find("span", {"class": "priceToPay"})
+        if ttp:
+            off = ttp.find("span", {"class": "a-offscreen"})
+            if off:
+                p = clean_price(off.get_text())
+                if p:
+                    return p
 
-    We specifically look for the "Without Exchange" or "New" row price.
-    If neither label exists, we take the highest price in the accordion
-    (exchange price is always lower, so the base price is the highest).
+        # Non-strikethrough a-price blocks in DOM order
+        # (sale price is ALWAYS the first a-price; MRP comes after)
+        for block in core.find_all("span", {"class": "a-price"}):
+            if _is_mrp_block(block):
+                continue
+            p = _price_from_block(block)
+            if p:
+                return p
+
+    return None
+
+
+def _accordion_base_price(soup):
+    """
+    Handle Amazon's accordion buybox (exchange-offer pages: MacBook, phones, etc.)
+    The accordion has:
+      - "With Exchange"    → lower subsidized price  (NOT what we want)
+      - "Without Exchange" → base selling price       (THIS is what we want)
+
+    DOM structure inside each accordion row:
+      <div class="newAccordionRow">
+        <span>Without Exchange</span>
+        <span class="a-price">  ← current price
+          <span class="a-offscreen">₹1,27,990</span>
+        </span>
+        <span class="a-price a-text-strike">  ← old/MRP price (strikethrough)
+          <span class="a-offscreen">₹1,34,900</span>
+        </span>
+      </div>
     """
     accordion = soup.find("div", {"id": "buyBoxAccordion"})
     if not accordion:
         return None
 
-    # Strategy 1: find the "Without Exchange" section explicitly
-    # Amazon labels this row with text like "Without Exchange" or "New (1 from ...)"
-    for row in accordion.find_all(["div", "span", "li"]):
-        txt = row.get_text(separator=" ", strip=True).lower()
-        if any(x in txt for x in ["without exchange", "new (", "buy new"]):
-            # Extract price from THIS row only
-            price_in_row = _first_sale_price_in(row)
-            if price_in_row:
-                return price_in_row
+    # Find all accordion rows
+    rows = accordion.find_all("div", class_=lambda c: c and "newAccordionRow" in c)
+    if not rows:
+        # Fallback: any direct child divs
+        rows = accordion.find_all("div", recursive=False)
 
-    # Strategy 2: collect ALL non-MRP prices in the accordion and take the HIGHEST
-    # (The "Without Exchange" / base price is always >= the exchange-subsidized price)
-    prices_in_accordion = []
+    without_exchange_price = None
+    with_exchange_price = None
+
+    for row in rows:
+        row_text = row.get_text(separator=" ", strip=True).lower()
+        is_without = any(x in row_text for x in ["without exchange", "no exchange", "buy new", "new ("])
+        is_with    = "with exchange" in row_text
+
+        # Get the FIRST non-MRP price in this row
+        row_price = None
+        for block in row.find_all("span", {"class": "a-price"}):
+            if _is_mrp_block(block):
+                continue
+            p = _price_from_block(block)
+            if p:
+                row_price = p
+                break
+
+        if is_without and row_price:
+            without_exchange_price = row_price
+        elif is_with and row_price:
+            with_exchange_price = row_price
+
+    # Return "Without Exchange" price if found; never return exchange-discounted price
+    if without_exchange_price:
+        return without_exchange_price
+
+    # No labeled rows found — accordion might have only one row (just "New")
+    # Collect all non-MRP prices and return the highest (base price >= exchange price)
+    all_prices = []
     for block in accordion.find_all("span", {"class": "a-price"}):
         if _is_mrp_block(block):
             continue
         p = _price_from_block(block)
         if p:
-            prices_in_accordion.append(p)
+            all_prices.append(p)
 
-    if prices_in_accordion:
-        return max(prices_in_accordion)  # base price is highest in accordion
+    if all_prices:
+        return max(all_prices)
 
     return None
 
 
 def parse_price(soup):
     """
-    Extract the correct buybox/selling price from an Amazon product page.
+    Extract the correct selling price from an Amazon product page.
 
-    Priority chain (most specific → broadest):
-      T0  buyBoxAccordion  — Exchange-offer pages (MacBook etc.); must come FIRST
-                            because corePriceDisplay on these pages shows the
-                            exchange-discounted price, not the base price.
-      T1  priceToPay       — Amazon's explicit "you pay this" class (non-accordion)
-      T2  corePriceDisplay — Canonical buybox price div
-      T3  apex_desktop     — Alternative buybox wrapper
-      T4  buyBoxInner / rightCol — Right-col scoped scan
-      T5  #ppd scoped      — Broader scan, noise sections removed
-      T6  legacy IDs       — Old Amazon layouts
+    The single most reliable source is the CENTER COLUMN price block
+    (`corePriceDisplay_desktop_feature_div`) — this always shows the actual
+    selling price exactly as displayed next to "Price history" link.
+
+    For exchange-offer pages (MacBook, phones): the center column may show
+    the exchange-discounted price. In that case the accordion "Without Exchange"
+    row has the base price. We detect this case and use the higher price.
+
+    Priority:
+      T1  Center column priceToPay / corePriceDisplay  — most reliable
+      T2  Accordion "Without Exchange" row             — MacBook/phone pages
+      T3  apex_desktop                                 — alternate wrapper
+      T4  rightCol / buyBoxInner scoped scan           — right buybox
+      T5  #ppd scoped (noise stripped)                 — broad fallback
+      T6  Legacy priceblock IDs                        — old pages
     """
 
-    # ══ TIER 0: Accordion buybox (exchange-offer pages like MacBook) ══════════
-    # These pages show a lower "With Exchange" price in corePriceDisplay,
-    # so we must extract the "Without Exchange" / base price from the accordion
-    # BEFORE falling through to corePriceDisplay.
-    accordion_price = _price_from_accordion(soup)
+    # ══ TIER 1: Center column — corePriceDisplay / priceToPay ════════════════
+    center_price = _center_col_price(soup)
+
+    # ══ TIER 2: Accordion "Without Exchange" base price ═══════════════════════
+    accordion_price = _accordion_base_price(soup)
+
+    # If both exist, take the HIGHER one
+    # (exchange pages show lower price in center; accordion has the real price)
+    if center_price and accordion_price:
+        return max(center_price, accordion_price)
+    if center_price:
+        return center_price
     if accordion_price:
         return accordion_price
 
-    # ══ TIER 1: priceToPay — the most explicit "you pay this" signal ═════════
-    # ONLY skip it if it's inside a carousel/sponsored/comparison widget.
-    # Do NOT skip buyBoxAccordion — if accordion didn't return, we're on a
-    # non-accordion page and priceToPay inside accordion is valid.
+    # ══ TIER 3: priceToPay anywhere (non-noise contexts) ══════════════════════
     bad_ancestors = {
         "similarities-widget", "sp-atf", "sponsoredProductsCarousel",
         "all-offers-display", "olp_feature_div", "olp-padding-small",
@@ -360,24 +435,7 @@ def parse_price(soup):
             if p:
                 return p
 
-    # ══ TIER 2: corePriceDisplay — Amazon's canonical buybox price div ════════
-    for cid in [
-        "corePriceDisplay_desktop_feature_div",
-        "corePrice_desktop",
-        "corePrice_feature_div",
-        "corePrice_mobile_feature_div",
-    ]:
-        core = soup.find("div", {"id": cid})
-        if not core:
-            continue
-        for block in core.find_all("span", {"class": "a-price"}):
-            if _is_mrp_block(block):
-                continue
-            p = _price_from_block(block)
-            if p:
-                return p
-
-    # ══ TIER 3: apex_desktop — alternative Amazon buybox wrapper ══════════════
+    # ══ TIER 4: apex_desktop — alternative buybox wrapper ═════════════════════
     for aid in [
         "apex_desktop",
         "apex_offerDisplay_desktop_feature_div",
@@ -390,7 +448,7 @@ def parse_price(soup):
         if p:
             return p
 
-    # ══ TIER 4: buyBoxInner / rightCol — right-side buybox scoped scan ════════
+    # ══ TIER 5: rightCol / buyBoxInner — right-side buybox ════════════════════
     for bid in ["buyBoxInner", "rightCol"]:
         box = soup.find("div", {"id": bid})
         if not box:
@@ -399,13 +457,12 @@ def parse_price(soup):
         if p:
             return p
 
-    # ══ TIER 5: #ppd scoped — broader scan, true noise removed ════════════════
+    # ══ TIER 6: #ppd scoped — broad scan, noise stripped ══════════════════════
     ppd = soup.find("div", {"id": "ppd"})
     if ppd:
         noise_ids = [
             "similarities-widget", "sp-atf", "sponsoredProductsCarousel",
             "olp_feature_div", "tmmSwatches",
-            # NOTE: buyBoxAccordion is NOT removed here — it's a valid source
         ]
         ppd_copy = BeautifulSoup(str(ppd), "lxml")
         for nid in noise_ids:
@@ -415,7 +472,7 @@ def parse_price(soup):
         if p:
             return p
 
-    # ══ TIER 6: legacy IDs — old Amazon page layouts ═════════════════════════
+    # ══ TIER 7: legacy IDs ════════════════════════════════════════════════════
     for pid in [
         "priceblock_ourprice",
         "priceblock_dealprice",
