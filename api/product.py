@@ -203,21 +203,49 @@ def detect_availability(soup, price):
     return AVAIL_UNKNOWN
 
 
-def _extract_price_from_block(block):
+def _is_mrp_block(block):
     """
-    Given a BeautifulSoup tag that is an a-price block,
-    extract the numeric price, skipping if it's a strikethrough/MRP block.
+    Return True if this a-price span is the MRP/strikethrough, NOT the selling price.
+    Checks multiple signals Amazon uses.
     """
     cls = " ".join(block.get("class", []))
-    # Skip MRP / strikethrough price blocks
+    # Class-based signals
     if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
-        return None
+        return True
+    # Parent element is a strikethrough container
+    parent = block.parent
+    if parent:
+        pcls = " ".join(parent.get("class", []))
+        if any(x in pcls for x in ["a-text-strike", "basisPrice"]):
+            return True
+    # data-a-strike attribute
+    if block.get("data-a-strike") == "true":
+        return True
+    # aria-label containing "M.R.P." or "was"
+    aria = block.get("aria-label", "").lower()
+    if any(x in aria for x in ["m.r.p", "mrp", "was ", "list price", "original"]):
+        return True
+    # Check if a sibling/ancestor label says M.R.P.
+    try:
+        for sib in block.parent.children:
+            if hasattr(sib, "get_text"):
+                t = sib.get_text().lower()
+                if "m.r.p" in t or "was " in t:
+                    return True
+    except Exception:
+        pass
+    return False
 
-    # Primary: a-offscreen span (hidden accessible text, most reliable)
+
+def _price_from_block(block):
+    """
+    Extract numeric price from an a-price span that has already passed MRP check.
+    Returns float or None.
+    """
+    # Most reliable: a-offscreen (accessibility text)
     off = block.find("span", {"class": "a-offscreen"})
     if off:
         return clean_price(off.get_text())
-
     # Fallback: whole + fraction
     whole = block.find("span", {"class": "a-price-whole"})
     if whole:
@@ -225,128 +253,138 @@ def _extract_price_from_block(block):
         w = re.sub(r"[^\d]", "", whole.get_text())
         f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
         if w:
-            try:
-                return clean_price(f"{w}.{f}")
-            except Exception:
-                pass
+            return clean_price(f"{w}.{f}")
+    return None
+
+
+def _first_sale_price_in(container):
+    """
+    Scan a-price blocks inside `container`, skip MRP/strikethrough, return first valid price.
+    """
+    if container is None:
+        return None
+    for block in container.find_all("span", {"class": "a-price"}):
+        if _is_mrp_block(block):
+            continue
+        p = _price_from_block(block)
+        if p:
+            return p
     return None
 
 
 def parse_price(soup):
     """
-    Extract the correct buybox/sale price from Amazon product page.
+    Extract the correct buybox/selling price from an Amazon product page.
 
-    Priority order (most → least reliable):
-    1. corePriceDisplay buybox block  — the actual purchase price shown in the buy box
-    2. priceToPay block               — newer Amazon layout
-    3. apex_desktop block             — another buybox container
-    4. twister/variation price        — variant selection price
-    5. Page-wide a-price scan         — skip strikethrough ones
-    6. Legacy priceblock IDs          — older Amazon pages
-    7. Whole+fraction directly        — last resort
+    Strategy: work from the most specific (buybox-only) containers outward.
+    Never fall through to a page-wide scan until all scoped methods fail.
+
+    The key insight:
+      - `priceToPay` is the ONLY span Amazon explicitly names as "price to pay"
+      - `corePriceDisplay_desktop_feature_div` wraps the entire buybox price section
+      - MRP lives in spans with class `basisPrice`, `a-text-strike`, or `a-text-price`
+      - Sponsored/carousel prices are OUTSIDE the buybox; never in `#ppd > #rightCol`
     """
-    price = None
 
-    # ── Method 1: corePriceDisplay — most reliable buybox price ──────────────
-    # This div specifically holds the price you PAY, not the MRP
-    core_ids = [
+    # ══ TIER 1: priceToPay — the most explicit "you pay this" signal ═════════
+    # Amazon uses this class specifically for the final purchase price.
+    # It is NEVER used for MRP. Check everywhere, not just buybox, because
+    # some layouts place it in the central column.
+    for ttp in soup.find_all("span", {"class": "priceToPay"}):
+        # Make sure it's not inside a comparison/sponsored widget
+        # by checking none of its ancestors are carousels or "other sellers"
+        ancestor_ids = [
+            a.get("id", "") for a in ttp.parents
+            if hasattr(a, "get")
+        ]
+        bad_ancestors = {
+            "similarities-widget", "sp-atf", "sponsoredProductsCarousel",
+            "buyBoxAccordion", "all-offers-display",
+            "olp_feature_div", "olp-padding-small",
+            "tmmSwatches",  # format selector (Kindle etc.)
+        }
+        if any(b in " ".join(ancestor_ids) for b in bad_ancestors):
+            continue
+        off = ttp.find("span", {"class": "a-offscreen"})
+        if off:
+            p = clean_price(off.get_text())
+            if p:
+                return p
+
+    # ══ TIER 2: corePriceDisplay — Amazon's canonical buybox price div ════════
+    for cid in [
         "corePriceDisplay_desktop_feature_div",
         "corePrice_desktop",
         "corePrice_feature_div",
-    ]
-    for cid in core_ids:
+        "corePrice_mobile_feature_div",
+    ]:
         core = soup.find("div", {"id": cid})
         if not core:
             continue
-        # Within core, find the priceToPay span first (most accurate)
-        ttp = core.find("span", {"class": "priceToPay"})
-        if ttp:
-            off = ttp.find("span", {"class": "a-offscreen"})
-            if off:
-                p = clean_price(off.get_text())
-                if p:
-                    return p
-
-        # Then try non-strikethrough a-price blocks
+        # Inside core: skip basisPrice row (that's MRP), take the first real price
+        # The DOM order is: sale price first, then M.R.P. row below it
         for block in core.find_all("span", {"class": "a-price"}):
-            p = _extract_price_from_block(block)
-            if p:
-                price = p
-                break
-        if price:
-            break
-
-    # ── Method 2: priceToPay anywhere on page ────────────────────────────────
-    if not price:
-        ttp = soup.find("span", {"class": "priceToPay"})
-        if ttp:
-            off = ttp.find("span", {"class": "a-offscreen"})
-            if off:
-                price = clean_price(off.get_text())
-
-    # ── Method 3: apex_desktop / apex_offerDisplay ────────────────────────────
-    if not price:
-        for aid in ["apex_desktop", "apex_offerDisplay_desktop_feature_div"]:
-            apex = soup.find("div", {"id": aid})
-            if not apex:
+            if _is_mrp_block(block):
                 continue
-            for block in apex.find_all("span", {"class": "a-price"}):
-                p = _extract_price_from_block(block)
-                if p:
-                    price = p
-                    break
-            if price:
-                break
-
-    # ── Method 4: buybox price span (id-based) ───────────────────────────────
-    if not price:
-        buybox = soup.find("div", {"id": "buyBoxInner"}) or \
-                 soup.find("div", {"id": "rightCol"}) or \
-                 soup.find("div", {"id": "ppd"})
-        if buybox:
-            for block in buybox.find_all("span", {"class": "a-price"}):
-                p = _extract_price_from_block(block)
-                if p:
-                    price = p
-                    break
-
-    # ── Method 5: all a-price blocks on page, skip strikethrough ─────────────
-    if not price:
-        for block in soup.find_all("span", {"class": "a-price"}):
-            p = _extract_price_from_block(block)
+            p = _price_from_block(block)
             if p:
-                price = p
-                break
+                return p
 
-    # ── Method 6: legacy priceblock IDs ──────────────────────────────────────
-    if not price:
-        for pid in [
-            "priceblock_ourprice",
-            "priceblock_dealprice",
-            "priceblock_saleprice",
-            "priceblock_snsprice_Based",
-        ]:
-            tag = soup.find("span", {"id": pid})
-            if tag:
-                p = clean_price(tag.get_text())
-                if p:
-                    price = p
-                    break
+    # ══ TIER 3: apex_desktop — another Amazon buybox wrapper ══════════════════
+    for aid in [
+        "apex_desktop",
+        "apex_offerDisplay_desktop_feature_div",
+        "apex_desktop_newAccordionRow",
+    ]:
+        apex = soup.find("div", {"id": aid})
+        if not apex:
+            continue
+        p = _first_sale_price_in(apex)
+        if p:
+            return p
 
-    # ── Method 7: raw whole+fraction anywhere ─────────────────────────────────
-    if not price:
-        whole = soup.find("span", {"class": "a-price-whole"})
-        frac  = soup.find("span", {"class": "a-price-fraction"})
-        if whole:
-            w = re.sub(r"[^\d]", "", whole.get_text())
-            f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
-            if w:
-                try:
-                    price = clean_price(f"{w}.{f}")
-                except Exception:
-                    pass
+    # ══ TIER 4: buyBoxInner / rightCol — scoped to the right-hand buybox ══════
+    # These containers are RIGHT SIDE ONLY — no carousels, no sponsored content.
+    for bid in ["buyBoxInner", "rightCol"]:
+        box = soup.find("div", {"id": bid})
+        if not box:
+            continue
+        p = _first_sale_price_in(box)
+        if p:
+            return p
 
-    return price
+    # ══ TIER 5: #ppd (Product Page Detail) — scoped but broader ══════════════
+    # Only use this if we couldn't find price in dedicated buybox divs.
+    # Extra filter: reject prices that appear inside known noise sections.
+    ppd = soup.find("div", {"id": "ppd"})
+    if ppd:
+        # Remove noise sections before scanning
+        noise_ids = [
+            "similarities-widget", "sp-atf", "sponsoredProductsCarousel",
+            "olp_feature_div", "tmmSwatches", "buyBoxAccordion",
+        ]
+        ppd_copy = BeautifulSoup(str(ppd), "lxml")
+        for nid in noise_ids:
+            for tag in ppd_copy.find_all(id=nid):
+                tag.decompose()
+        p = _first_sale_price_in(ppd_copy)
+        if p:
+            return p
+
+    # ══ TIER 6: legacy IDs — old Amazon page layouts ═════════════════════════
+    for pid in [
+        "priceblock_ourprice",
+        "priceblock_dealprice",
+        "priceblock_saleprice",
+        "priceblock_snsprice_Based",
+    ]:
+        tag = soup.find("span", {"id": pid})
+        if tag:
+            p = clean_price(tag.get_text())
+            if p:
+                return p
+
+    return None
 
 
 def parse(html, asin, domain):
@@ -368,6 +406,42 @@ def parse(html, asin, domain):
     price = None
     try:
         price = parse_price(soup)
+    except Exception:
+        pass
+
+    # ── Cross-validate: extract MRP and compare ───────────────────────────────
+    # If the price we found matches the MRP exactly, we grabbed the wrong span.
+    # In that case, discard and try to find a lower (sale) price.
+    try:
+        mrp = None
+        # MRP is always inside a basisPrice or a-text-strike container
+        for block in soup.find_all("span", {"class": "a-price"}):
+            cls = " ".join(block.get("class", []))
+            if any(x in cls for x in ["basisPrice", "a-text-strike", "a-text-price"]):
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    mrp = clean_price(off.get_text())
+                    if mrp:
+                        break
+        # If price == mrp exactly, we got the MRP — throw it away
+        if price and mrp and abs(price - mrp) < 0.01:
+            # Try to find any price in buybox that differs from MRP
+            for cid in ["corePriceDisplay_desktop_feature_div", "buyBoxInner", "rightCol"]:
+                container = soup.find(id=cid)
+                if not container:
+                    continue
+                for block in container.find_all("span", {"class": "a-price"}):
+                    cls = " ".join(block.get("class", []))
+                    if any(x in cls for x in ["basisPrice", "a-text-strike", "a-text-price"]):
+                        continue
+                    off = block.find("span", {"class": "a-offscreen"})
+                    if off:
+                        candidate = clean_price(off.get_text())
+                        if candidate and abs(candidate - mrp) > 0.01:
+                            price = candidate
+                            break
+                if price and abs(price - mrp) > 0.01:
+                    break
     except Exception:
         pass
 
