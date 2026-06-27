@@ -44,7 +44,6 @@ def is_blocked(html):
     ])
 
 def is_dead_page(html):
-    """Detect Amazon 404 / dead product pages — no point retrying these."""
     if not html:
         return False
     low = html.lower()
@@ -53,7 +52,7 @@ def is_dead_page(html):
         "not a functioning page",
         "page on our site",
         "dogs of amazon",
-        "we couldn\'t find that page",
+        "we couldn't find that page",
         "the web address you entered is not",
     ])
 
@@ -71,14 +70,9 @@ def clean_price(text):
         return None
 
 def fetch_with_retry(url, max_attempts=6):
-    """
-    Retry up to max_attempts times with increasing delay.
-    Switches UA every attempt.
-    """
     session = requests.Session()
     for attempt in range(max_attempts):
         try:
-            # Fast first try, then add small delays
             if attempt > 0:
                 time.sleep(random.uniform(0.5, 1.5) * attempt)
 
@@ -88,18 +82,17 @@ def fetch_with_retry(url, max_attempts=6):
             if resp.status_code == 404:
                 return None, "Product not found. Check the ASIN."
             if resp.status_code in (503, 429, 403):
-                continue  # retry immediately with new UA
+                continue
             if resp.status_code != 200:
                 continue
 
             html = resp.text
 
-            # Dead product — stop immediately, no point retrying
             if is_dead_page(html):
                 return None, "DEAD_PAGE"
 
             if is_blocked(html):
-                continue  # retry with new UA
+                continue
 
             return html, None
 
@@ -115,13 +108,102 @@ def fetch_with_retry(url, max_attempts=6):
     return None, "Amazon blocked all attempts. Try again in a moment."
 
 
+# ── Availability constants ────────────────────────────────────────────────────
+AVAIL_IN_STOCK          = "In Stock"
+AVAIL_LOW_STOCK         = "Low Stock"
+AVAIL_TEMP_OOS          = "Temporarily Out of Stock"
+AVAIL_CURRENTLY_UNAVAIL = "Currently Unavailable"
+AVAIL_OUT_OF_STOCK      = "Out of Stock"
+AVAIL_UNKNOWN           = "Unknown"
+
+# Phrases Amazon uses and what they map to
+_PHRASE_MAP = [
+    # Temporarily out of stock (working hard to restock)
+    ("temporarily out of stock",                              AVAIL_TEMP_OOS),
+    ("we are working hard to be back in stock",               AVAIL_TEMP_OOS),
+    ("working hard to be back in stock",                      AVAIL_TEMP_OOS),
+    # Currently unavailable (no restock signal)
+    ("currently unavailable",                                 AVAIL_CURRENTLY_UNAVAIL),
+    ("we don't know when or if this item will be back",       AVAIL_CURRENTLY_UNAVAIL),
+    ("we do not know when or if this item will be back",      AVAIL_CURRENTLY_UNAVAIL),
+    # In stock variants
+    ("in stock",                                              AVAIL_IN_STOCK),
+    # Low stock
+    ("only",                                                  None),   # handled separately (needs "left")
+    # Out of stock
+    ("out of stock",                                          AVAIL_OUT_OF_STOCK),
+    ("not available",                                         AVAIL_OUT_OF_STOCK),
+]
+
+def _phrase_to_avail(txt):
+    """Map a lowercased text blob to an availability constant, or None."""
+    for phrase, status in _PHRASE_MAP:
+        if phrase in txt:
+            if phrase == "only":
+                if "left" in txt:
+                    return AVAIL_LOW_STOCK
+                continue
+            return status
+    return None
+
+
+def detect_availability(soup, price):
+    """
+    Multi-layer availability detection.
+    Priority: explicit DOM signals > buybox buttons > full-page text > price fallback.
+    """
+
+    # ── Layer 1: #availability div (most reliable) ────────────────────────────
+    avail_div = soup.find("div", {"id": "availability"})
+    if avail_div:
+        txt = avail_div.get_text(separator=" ", strip=True).lower()
+        result = _phrase_to_avail(txt)
+        if result:
+            return result
+
+    # ── Layer 2: Add-to-Cart / Buy-Now buttons present → definitely In Stock ──
+    if soup.find("input", {"id": "add-to-cart-button"}) or \
+       soup.find("input", {"id": "buy-now-button"}):
+        return AVAIL_IN_STOCK
+
+    # ── Layer 3: merchant-info block ──────────────────────────────────────────
+    merchant = soup.find("div", {"id": "merchant-info"})
+    if merchant:
+        txt = merchant.get_text(separator=" ", strip=True).lower()
+        result = _phrase_to_avail(txt)
+        if result:
+            return result
+
+    # ── Layer 4: outOfStock div ───────────────────────────────────────────────
+    oos_div = soup.find("div", {"id": "outOfStock"})
+    if oos_div:
+        txt = oos_div.get_text(separator=" ", strip=True).lower()
+        result = _phrase_to_avail(txt)
+        if result:
+            return result
+        # div exists but no matching phrase → treat as unavailable
+        return AVAIL_OUT_OF_STOCK
+
+    # ── Layer 5: Full-page text sweep ─────────────────────────────────────────
+    page_text = soup.get_text(separator=" ", strip=True).lower()
+    result = _phrase_to_avail(page_text)
+    if result:
+        return result
+
+    # ── Layer 6: Price fallback ───────────────────────────────────────────────
+    if price:
+        return AVAIL_IN_STOCK
+
+    return AVAIL_UNKNOWN
+
+
 def parse(html, asin, domain):
     try:
         soup = BeautifulSoup(html, "lxml")
     except Exception:
         soup = BeautifulSoup(html, "html.parser")
 
-    # ── Title ──────────────────────────────────────────────────
+    # ── Title ─────────────────────────────────────────────────────────────────
     title = None
     try:
         tag = soup.find("span", {"id": "productTitle"})
@@ -130,208 +212,72 @@ def parse(html, asin, domain):
     except Exception:
         pass
 
-    # ══════════════════════════════════════════════════════════════
-    # AVAILABILITY
-    # ══════════════════════════════════════════════════════════════
-    # Rule: ONLY read from #availability > span — this is the single
-    # canonical element Amazon uses for the *selected* variant's stock
-    # status. Never scan broad regions like #rightCol or #buybox because
-    # those contain colour-swatch labels ("Currently unavailable") for
-    # *other* variants, which would falsely mark an in-stock product OOS.
-    #
-    # For the OOS carousel-price problem (carousel prices on OOS pages):
-    # we solve it purely through price-scope isolation (see below), NOT
-    # by trying to gate on availability text found in broad containers.
-    # ══════════════════════════════════════════════════════════════
-    availability = "Unknown"
-    is_oos = False   # True only when we are CERTAIN this variant is OOS
-
-    OOS_PHRASES = [
-        "currently unavailable",
-        "out of stock",
-        "not available",
-        "we don't know when or if this item will be back in stock",
-    ]
-
-    try:
-        avail_div = soup.find("div", {"id": "availability"})
-        if avail_div:
-            # Use only the direct <span> child text to avoid noise from
-            # nested elements (e.g. delivery date spans).
-            span = avail_div.find("span")
-            raw  = (span or avail_div).get_text(" ", strip=True)
-            txt  = raw.lower()
-
-            if "in stock" in txt:
-                availability = "In Stock"
-            elif "only" in txt and "left" in txt:
-                availability = "Low Stock"
-            elif any(p in txt for p in OOS_PHRASES):
-                availability = "Out of Stock"
-                is_oos = True
-            else:
-                availability = raw[:60]   # unknown phrasing — show as-is
-
-        else:
-            # No #availability div at all — fall back to checking two
-            # unambiguous, variant-agnostic IDs only:
-            #   #outOfStock_feature_div  → Amazon's explicit OOS block
-            #   #addToCart_feature_div   → presence = purchasable
-            oos_block = soup.find("div", {"id": "outOfStock_feature_div"})
-            atc_block  = soup.find("div", {"id": "addToCart_feature_div"})
-            if oos_block and oos_block.get_text(strip=True):
-                availability = "Out of Stock"
-                is_oos = True
-            elif atc_block:
-                availability = "In Stock"
-            # else leave as "Unknown" and infer from price below
-
-    except Exception:
-        pass
-
-    # ══════════════════════════════════════════════════════════════
-    # PRICE
-    # ══════════════════════════════════════════════════════════════
-    # If confirmed OOS → return None immediately; do not touch any
-    # price selector.  Amazon renders carousel prices ("Consider these
-    # available items") in the SAME a-offscreen spans we use, so the
-    # only safe option for OOS pages is no price at all.
-    #
-    # For in-stock / unknown pages → search named buybox IDs first
-    # (these are never reused in carousels), then #rightCol with
-    # carousel nodes stripped, then #centerCol as last resort.
-    # ══════════════════════════════════════════════════════════════
+    # ── Price (sale price only, skip MRP/strikethrough) ───────────────────────
     price = None
-
-    if not is_oos:
-        try:
-            def first_sale_price(container):
-                """
-                Return the first non-MRP a-offscreen price in container.
-                Skips: strikethrough (a-text-strike), basisPrice (MRP block),
-                       but does NOT skip a-text-price alone — on many pages the
-                       sale price span carries that class alongside a-color-price.
-                """
-                if not container:
-                    return None
-                for block in container.find_all("span", {"class": "a-price"}):
-                    classes = block.get("class", [])
-                    # Skip MRP / strikethrough blocks only
-                    if "a-text-strike" in classes or "basisPrice" in classes:
-                        continue
-                    off = block.find("span", {"class": "a-offscreen"})
-                    if off:
-                        p = clean_price(off.get_text())
-                        if p:
-                            return p
-                return None
-
-            # ── Method 1: named corePriceDisplay IDs ──────────────────────
-            # These IDs exist exclusively in the buybox and are never
-            # reused in carousels or swatch sections.
-            for price_id in [
-                "corePriceDisplay_desktop_feature_div",  # standard desktop
-                "corePrice_desktop",                     # alternate desktop
-                "apex_desktop",                          # deal/sale layout  ← this page
-                "corePrice_feature_div",                 # mobile / simplified
-                "tmmSwatches",                           # kindle / book pricing
-                "buyNewSection",                         # new/used split pages
-            ]:
-                node = soup.find(attrs={"id": price_id})
-                if node:
-                    p = first_sale_price(node)
+    try:
+        core = (
+            soup.find("div", {"id": "corePriceDisplay_desktop_feature_div"}) or
+            soup.find("div", {"id": "corePrice_desktop"}) or
+            soup.find("div", {"id": "apex_desktop"})
+        )
+        if core:
+            for block in core.find_all("span", {"class": "a-price"}):
+                cls = " ".join(block.get("class", []))
+                if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
+                    continue
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    p = clean_price(off.get_text())
                     if p:
                         price = p
                         break
 
-            # ── Method 2: #price and #kindle-price spans ───────────────────
-            if not price:
-                for span_id in ["price", "kindle-price"]:
-                    tag = soup.find("span", {"id": span_id})
-                    if tag:
-                        p = clean_price(tag.get_text())
-                        if p:
-                            price = p
-                            break
+        if not price:
+            for block in soup.find_all("span", {"class": "a-price"}):
+                cls = " ".join(block.get("class", []))
+                if any(x in cls for x in ["a-text-strike", "basisPrice", "a-text-price"]):
+                    continue
+                off = block.find("span", {"class": "a-offscreen"})
+                if off:
+                    p = clean_price(off.get_text())
+                    if p:
+                        price = p
+                        break
 
-            # ── Method 3: rightCol with carousels stripped ─────────────────
-            # #rightCol is the authoritative buybox column. We strip the
-            # known carousel / swatch / "consider-these" sub-nodes before
-            # searching so OOS-page carousel prices can't bleed through.
-            if not price:
-                right = soup.find("div", {"id": "rightCol"})
-                if right:
-                    import copy as _copy
-                    right = _copy.copy(right)
-                    for strip_id in [
-                        "rhf",                               # right-hand "consider these"
-                        "similarities_feature_div",
-                        "purchase-sims-feature",
-                        "session-sims-feature",
-                        "sp_detail",
-                        "sponsoredProducts2_feature_div",
-                        "desktop-dp-sims",
-                        "tns_atf_desktop_feature_div",       # top-of-page sponsored
-                        "variation_color_name",              # colour swatches
-                        "variation_size_name",               # size swatches
-                        "twister-plus-inline-twister",       # variant picker widget
-                    ]:
-                        el = right.find(attrs={"id": strip_id})
-                        if el:
-                            el.decompose()
-                    price = first_sale_price(right)
+        if not price:
+            whole = soup.find("span", {"class": "a-price-whole"})
+            frac  = soup.find("span", {"class": "a-price-fraction"})
+            if whole:
+                w = re.sub(r"[^\d]", "", whole.get_text())
+                f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
+                try:
+                    price = float(f"{w}.{f}") if w else None
+                except Exception:
+                    pass
 
-            # ── Method 4: whole + fraction inside #rightCol (stripped) ─────
-            # Catches the ₹349⁰⁰ superscript layout where a-offscreen
-            # may not be present but whole/fraction spans are.
-            if not price:
-                right = soup.find("div", {"id": "rightCol"})
-                if right:
-                    import copy as _copy
-                    right = _copy.copy(right)
-                    for strip_id in ["variation_color_name", "variation_size_name",
-                                     "twister-plus-inline-twister", "rhf"]:
-                        el = right.find(attrs={"id": strip_id})
-                        if el:
-                            el.decompose()
-                    whole = right.find("span", {"class": "a-price-whole"})
-                    frac  = right.find("span", {"class": "a-price-fraction"})
-                    if whole:
-                        w = re.sub(r"[^\d]", "", whole.get_text())
-                        f = re.sub(r"[^\d]", "", frac.get_text() if frac else "00")
-                        try:
-                            price = float(f"{w}.{f}") if w else None
-                        except Exception:
-                            pass
+        if not price:
+            for pid in ["priceblock_ourprice", "priceblock_dealprice", "priceblock_saleprice"]:
+                tag = soup.find("span", {"id": pid})
+                if tag:
+                    p = clean_price(tag.get_text())
+                    if p:
+                        price = p
+                        break
 
-            # ── Method 5: centerCol fallback ───────────────────────────────
-            if not price:
-                center = soup.find("div", {"id": "centerCol"})
-                if center:
-                    price = first_sale_price(center)
+    except Exception:
+        pass
 
-            # ── Method 6: legacy priceblock IDs ───────────────────────────
-            if not price:
-                for pid in ["priceblock_ourprice", "priceblock_dealprice",
-                            "priceblock_saleprice"]:
-                    tag = soup.find("span", {"id": pid})
-                    if tag:
-                        p = clean_price(tag.get_text())
-                        if p:
-                            price = p
-                            break
+    if price and price > 500000:
+        price = None
 
-            if price and price > 500000:
-                price = None
+    # ── Availability ──────────────────────────────────────────────────────────
+    availability = detect_availability(soup, price)
 
-        except Exception:
-            pass
+    # Nullify price for unavailable/OOS products to avoid leaking MRP from DOM
+    if availability in (AVAIL_CURRENTLY_UNAVAIL, AVAIL_TEMP_OOS, AVAIL_OUT_OF_STOCK):
+        price = None
 
-    # ── Reconcile unknown availability using price evidence ─────
-    if availability == "Unknown":
-        availability = "In Stock" if price else "Out of Stock"
-
-    # ── Rating ─────────────────────────────────────────────────
+    # ── Rating (score) ────────────────────────────────────────────────────────
     rating = None
     try:
         tag = soup.find("span", {"class": "a-icon-alt"})
@@ -348,6 +294,45 @@ def parse(html, asin, domain):
     except Exception:
         pass
 
+    # ── Rating count ──────────────────────────────────────────────────────────
+    rating_count = None
+    try:
+        # Method 1: #acrCustomerReviewText  e.g. "154 ratings"
+        tag = soup.find("span", {"id": "acrCustomerReviewText"})
+        if tag:
+            m = re.search(r"([\d,]+)", tag.get_text())
+            if m:
+                rating_count = int(m.group(1).replace(",", ""))
+
+        # Method 2: link text next to star widget  e.g. "(27)"  or  "27 ratings"
+        if not rating_count:
+            tag = soup.find("a", {"id": "acrCustomerReviewLink"})
+            if tag:
+                m = re.search(r"([\d,]+)", tag.get_text())
+                if m:
+                    rating_count = int(m.group(1).replace(",", ""))
+
+        # Method 3: data-hook attribute used by newer Amazon pages
+        if not rating_count:
+            tag = soup.find(attrs={"data-hook": "total-review-count"})
+            if tag:
+                m = re.search(r"([\d,]+)", tag.get_text())
+                if m:
+                    rating_count = int(m.group(1).replace(",", ""))
+
+        # Method 4: generic scan — find span near star widget containing "rating"
+        if not rating_count:
+            for span in soup.find_all("span"):
+                txt = span.get_text(strip=True)
+                if re.search(r"[\d,]+\s+ratings?", txt, re.I):
+                    m = re.search(r"([\d,]+)", txt)
+                    if m:
+                        rating_count = int(m.group(1).replace(",", ""))
+                        break
+
+    except Exception:
+        pass
+
     return {
         "asin":         asin,
         "url":          f"https://www.{domain}/dp/{asin}",
@@ -355,6 +340,7 @@ def parse(html, asin, domain):
         "price":        price,
         "currency":     "INR" if domain == "amazon.in" else "USD",
         "rating":       rating,
+        "rating_count": rating_count,
         "availability": availability,
         "status":       200,
     }
@@ -375,7 +361,7 @@ def scrape(asin, domain):
 
         data = parse(html, asin, domain)
 
-        if not data["title"] and not data["price"]:
+        if not data["title"] and not data["price"] and data["availability"] == AVAIL_UNKNOWN:
             return {"error": "Could not extract data. Try again.", "status": 422}
 
         return data
